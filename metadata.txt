@@ -1,0 +1,41 @@
+[general]
+name:Brazil Data Cube Catalog
+description:Plugin to obtain satellite images provided by the Brazil Data Cube (BDC),
+            through a query by a spatial extent and a date range.
+about:This plugin allows users to query and retrieve satellite scene mosaics
+       by defining the collection of interest, a spatial extent, and a date range.
+
+       The images are provided by the Brazil Data Cube (BDC), the plugin retrieves
+       them in Cloud Optimized GeoTIFF (COG) format.
+
+       <b>The COG images are only from Brazil</b>
+
+       This plugin is part of the Brazilian Fire Information System (Sisfogo),
+       develop by National Center to Prevent and Combat Forest fires (Prevfogo/Ibama).
+
+       Documentation:
+       <a href="https://raw.githubusercontent.com/lmotta/bdc_catalog/refs/heads/main/doc/bdc_catalog_en.pdf">English</a>
+       <a href="https://raw.githubusercontent.com/lmotta/bdc_catalog/refs/heads/main/doc/bdc_catalog_pt.pdf">Portuguese</a>
+
+
+author:Luiz Motta
+email:motta.luiz@gmail.com
+
+version:0.1
+qgisMinimumVersion:3.40
+
+experimental:True
+deprecated:False
+
+icon:./resources/bdccatalog.svg
+tags:Brazil Data Cube, Satellite images, Catalog, Sisfogo, Prevfogo 
+
+#category:Web
+
+homepage:https://github.com/lmotta/bdc_catalog/wiki
+tracker:https://github.com/lmotta/bdc_catalog/issues
+repository:https://github.com/lmotta/bdc_catalog
+
+changelog:
+     - 0.1 (2025-10-10)
+     Started

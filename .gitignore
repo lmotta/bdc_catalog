@@ -1,0 +1,9 @@
+# Ignore
+.directory
+*.pyc
+*.zip
+# Not Ignore
+!bdc
+!i18n
+!resources
+!doc
