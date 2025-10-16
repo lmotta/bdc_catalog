@@ -54,7 +54,8 @@ class BDCStacClient(StacClient):
     def __init__(self, notifier:TaskNotifier):
         super().__init__( notifier )
 
-        self.SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'  
+        self.SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'
+        self.use_url_file = True
 
     def search(
             self,

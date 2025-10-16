@@ -62,8 +62,6 @@ class StacProcessor(QObject):
         self._processor = task_processor
         self._client = stac_client
 
-        self._use_url_file = True # stac_client
-
         self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
         
         self._vrt_options = None
@@ -96,58 +94,75 @@ class StacProcessor(QObject):
             self._vrt_options['srcNodata'] = self._client.collection['nodata']
         self._vrt_options = gdal.BuildVRTOptions( **self._vrt_options )
 
-    def _search(self)->None:
-        def createFootprintLayerFile(filepath:str, driver:str, features:dict)->None:
-            # Create layer
-            field_types = [
-                {
-                    'name': 'id',
-                    'type': QMetaType.QString,
-                    'length': 100,
-                },
-                {
-                    'name': 'properties',
-                    'type': QMetaType.QString,
-                    'length': 500,
-                },
-                {
-                    'name': 'bands',
-                    'type': QMetaType.QString,
-                    'length': 0, # Unlimit
-                }
-            ]
-            fields = QgsFields()
-            for field in field_types:
-                fields.append(
-                    QgsField( name=field['name'], type=field['type'], len=field['length'] )
-                )
-            asset = list( features.keys() )[0]
-            geom = QgsJsonUtils.geometryFromGeoJson(json.dumps( features[ asset ]['geometry'] ) )
-            options = QgsVectorFileWriter.SaveVectorOptions()
-            options.driverName = driver
-            writer = QgsVectorFileWriter.create(
-                filepath,
-                fields,
-                geom.wkbType(),
-                QgsCoordinateReferenceSystem('EPSG:4326'),
-                self.project.transformContext(),
-                options
+    def _createFootprintLayerFile(self, filepath:str, driver:str, features:dict)->None:
+        # Create layer
+        field_types = [
+            {
+                'name': 'id',
+                'type': QMetaType.QString,
+                'length': 100,
+            },
+            {
+                'name': 'properties',
+                'type': QMetaType.QString,
+                'length': 500,
+            },
+            {
+                'name': 'bands',
+                'type': QMetaType.QString,
+                'length': 0, # Unlimit
+            }
+        ]
+        fields = QgsFields()
+        for field in field_types:
+            fields.append(
+                QgsField( name=field['name'], type=field['type'], len=field['length'] )
             )
-            # Populate
-            for asset, data in features.items():
-                feature = QgsFeature()
+        asset = list( features.keys() )[0]
+        geom = QgsJsonUtils.geometryFromGeoJson(json.dumps( features[ asset ]['geometry'] ) )
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = driver
+        writer = QgsVectorFileWriter.create(
+            filepath,
+            fields,
+            geom.wkbType(),
+            QgsCoordinateReferenceSystem('EPSG:4326'),
+            self.project.transformContext(),
+            options
+        )
+        # Populate
+        for asset, data in features.items():
+            feature = QgsFeature()
 
-                geom = QgsJsonUtils.geometryFromGeoJson(json.dumps(data['geometry']))
-                feature.setGeometry( geom )
+            geom = QgsJsonUtils.geometryFromGeoJson(json.dumps(data['geometry']))
+            feature.setGeometry( geom )
 
-                atts = [asset] + [ json.dumps( data[k] ) for k in data if not k == 'geometry' ]
-                feature.setAttributes( atts )
+            atts = [asset] + [ json.dumps( data[k] ) for k in data if not k == 'geometry' ]
+            feature.setAttributes( atts )
 
-                writer.addFeature( feature )
-            writer = None
+            writer.addFeature( feature )
+        writer = None
 
+    def _search_run(self, task:QgsTask)->dict:
+        is_ok =  self._client.search( self.bbox, self.dates, task.isCanceled )
+        if not is_ok:
+            if task.isCanceled():
+                self.is_task_canceled = True
+            return { 'is_ok': is_ok }
+
+        features = self._client.getFeatures()
+        if not len( features):
+            return { 'is_ok': True }
+
+        filepath = os.path.join( self.dir_mosaic, f"footprint.{self._str_search}.geojson" )
+        self._createFootprintLayerFile( filepath, 'GeoJSON', features )
+        source = {'filepath': filepath, 'add_group': False, 'color': 'Gray', 'opacity': 0.1 }
+        
+        return { 'is_ok': True, 'source': source }
+
+    def _search(self)->None:
         def on_finished(exception, data:dict)->None:
-            if self._use_url_file:
+            if self._client.use_url_file:
                 setConfigClearUrl()
 
             self._is_ok_last_processed = False
@@ -183,23 +198,6 @@ class StacProcessor(QObject):
 
             self.addMosaicScenes.emit()
 
-        def run(task:QgsTask)->dict:
-            is_ok =  self._client.search( self.bbox, self.dates, task.isCanceled )
-            if not is_ok:
-                if task.isCanceled():
-                    self.is_task_canceled = True
-                return { 'is_ok': is_ok }
-
-            features = self._client.getFeatures()
-            if not len( features):
-                return { 'is_ok': True }
-
-            filepath = os.path.join( self.dir_mosaic, f"footprint.{self._str_search}.geojson" )
-            createFootprintLayerFile( filepath, 'GeoJSON', features )
-            source = {'filepath': filepath, 'add_group': False, 'color': 'Gray', 'opacity': 0.1 }
-            
-            return { 'is_ok': True, 'source': source }
-
         self._last_search_params = {
             'collection': self._client.collection['id'],
             'spatial_resolution': self.spatial_resolution,
@@ -207,14 +205,14 @@ class StacProcessor(QObject):
             'bbox': self.bbox            
         }
 
-        if self._use_url_file:
+        if self._client.use_url_file:
             setConfigOptionUrl()
 
         self._total_scenes = None
         self._total_mosaic = None
 
         name = f"Create Footprint - {self._str_search}"
-        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        task = QgsTask.fromFunction( name, self._search_run, on_finished=on_finished )
         self._processor.setTask( task, self._client.collection['id'] )
         self.taskManager.addTask( task )
         self.task_id = self.taskManager.taskId(task)
@@ -222,12 +220,12 @@ class StacProcessor(QObject):
         # DEBUGGER
         # task = TaskDebugger()
         # self._processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None,  run(task) )
+        # on_finished(None, self._search_run(task) )
         #
 
     def _onAddMosaicScenes(self)->None:
         def on_finished(exception, data=None)->None:
-            if self._use_url_file:
+            if self._client.use_url_file:
                 setConfigClearUrl()
 
             if exception:
@@ -318,7 +316,7 @@ class StacProcessor(QObject):
                 }
                 self._notifier.addLayerMosaicGroup(**args)
 
-        if self._use_url_file:
+        if self._client.use_url_file:
             setConfigOptionUrl()
 
         name = f"Create Mosaics - {self._str_search}"
@@ -349,12 +347,13 @@ class StacProcessor(QObject):
             
             return count == total
 
-        r = self._client.setToken( self._client.collection['id'] )
-        if not r['is_ok']:
-            msg = tr('Error requesting a token {}.').format( self._client.TOKEN_URL.format( self._client.collection['id'] ))
-            self._notifier.message( { 'text': msg, 'level': Qgis.Critical }, type='message_bar' )
-            self.finished.emit()
-            return
+        if hasattr( self._client, 'setToken'):
+            r = self._client.setToken( self._client.collection['id'] )
+            if not r['is_ok']:
+                msg = tr('Error requesting a token {}.').format( self._client.TOKEN_URL.format( self._client.collection['id'] ))
+                self._notifier.message( { 'text': msg, 'level': Qgis.Critical }, type='message_bar' )
+                self.finished.emit()
+                return
 
         bbox_str = '_'.join( [ f"{c:.4f}" for c in self.bbox ] )
         self._str_search = f"{self._client.collection['id']}_{'_'.join( self.dates )}_{bbox_str}"

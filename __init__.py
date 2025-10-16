@@ -38,14 +38,13 @@ from qgis.PyQt.QtWidgets import  QAction
 
 from qgis.gui import QgisInterface
 
-
 from .bdc.config import configCollection
 from .bdc.catalogwidget import CatalogWidget
 from .bdc.catalog import Catalog
 from .bdc.taskmanager import TaskNotifier, TaskProcessor
-from .bdc.stacprocessor import StacProcessor
 from .bdc.translate import setTranslation
 
+from .bdc.bdc_stacprocessor import BDCStacProcessor
 from .bdc.bdc_stacclient import BDCStacClient
 
 def classFactory(iface:QgisInterface):
@@ -68,7 +67,7 @@ class BDCCatalogPlugin(QObject):
         task_processor = TaskProcessor( self.iface, 'BDC Catalog' )
         task_notifier.sendData.connect( task_processor.process )
         client = BDCStacClient( task_notifier )
-        self._processor = StacProcessor( iface, task_notifier, task_processor, client )
+        self._processor = BDCStacProcessor( iface, task_notifier, task_processor, client )
         self._config_collection = configCollection()
 
         self.catalog = None # initGui
@@ -104,5 +103,5 @@ class BDCCatalogPlugin(QObject):
 
     @pyqtSlot(bool)
     def on_BdcClicked(self, enabled:bool)->None:
-        self.bdc.enabled( enabled )
+        self.catalog.enabled( enabled )
 
