@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- BDC Catalog
-                                 A QGIS plugin
- Plugin to access Brasil Data Cube for show COG scenes
+ Catalog Widget
                              -------------------
-        begin                : 2025-09-02
+        begin                : 2025-10-15
         copyright            : (C) 2025 by Luiz Motta
         email                : motta.luiz@gmail.com
 
@@ -152,11 +150,15 @@ class ToolButtonExtent(QToolButton):
         super().leaveEvent(event)
 
 
-class BdcCatalogWidget(QWidget):
-    SETTINGS_KEY = 'bdccatalogwidget/vrt_dir'
+class CatalogWidget(QWidget):
     goProcess = pyqtSignal(dict)
     cancelProcess = pyqtSignal()
-    def __init__(self, iface:QgisInterface, isCancelled:Callable[[None], bool], config_collection:dict):
+    def __init__(self,
+            iface:QgisInterface,
+            isCancelled:Callable[[None], bool],
+            config_collection:dict,
+            setting_key:str
+        ):
         def setDateWidget(dt):
             dt.setDisplayFormat('yyyy-MM-dd')
             dt.setCalendarPopup(True)
@@ -175,17 +177,26 @@ class BdcCatalogWidget(QWidget):
             widget.setStyleSheet(style)
 
         def createButton(
-                icon:QIcon,
-                tooltip:str,
-                slot:Callable[[None], None],
-                is_hover_button=False
-            )->QToolButton:
-            btn = QToolButton(self) if not is_hover_button else ToolButtonExtent( self, iface )
+            icon:QIcon,
+            tooltip:str,
+            slot:Callable[[None], None]
+        )->QToolButton:
+            btn = QToolButton( self )
             btn.setAutoRaise(True)
             btn.setIcon( icon )
             btn.setToolTip( tooltip )
             btn.setIconSize(QSize(16, 16))
             btn.released.connect( slot )
+
+            return btn
+
+        def createButtonExtent()->ToolButtonExtent:
+            btn = ToolButtonExtent( self, iface )
+            btn.setAutoRaise(True)
+            btn.setIcon( QgsApplication.getThemeIcon('extents.svg') )
+            btn.setToolTip( self._fmt_extent.format( tr('No Extent Captured') ) )
+            btn.setIconSize(QSize(16, 16))
+            btn.released.connect( self.on_CaptureExtent )
 
             return btn
 
@@ -196,7 +207,7 @@ class BdcCatalogWidget(QWidget):
                 self.on_ToggleRun
             )
             btn.setAttribute(Qt.WA_StyledBackground, True)
-            btn.setObjectName('bdc_toggle')
+            btn.setObjectName('mspc_toggle')
             setSyleWidget(btn)
             btn.is_run = is_run
 
@@ -262,6 +273,7 @@ class BdcCatalogWidget(QWidget):
 
         self.isCancelled = isCancelled
         self.config_collection = config_collection
+        self.setting_key_vrt_dir = f"{setting_key}/vrt_dir"
 
         self._toggle_button_run = {
             True: {
@@ -297,15 +309,11 @@ class BdcCatalogWidget(QWidget):
             self._title_folder,
             self.on_SelectFolderVRT
         )
-        last_dir = self.setting.value( self.SETTINGS_KEY, type=str )
+        last_dir = self.setting.value( self.setting_key_vrt_dir, type=str )
         if ( last_dir and QDir(last_dir).exists() ):
             self.btn_folder.setToolTip( last_dir )
         
-        self.btn_extent = createButton(
-            QgsApplication.getThemeIcon('extents.svg'),
-            self._fmt_extent.format( tr('No Extent Captured') ),
-            self.on_CaptureExtent, is_hover_button=True
-        )
+        self.btn_extent = createButtonExtent()
 
         # --- View 1 ---
         self.controls = createControls()
@@ -344,6 +352,30 @@ class BdcCatalogWidget(QWidget):
     def on_UpdateItemsSpatialResolution(self, collection:str)->None:
         self.cbx_spatial_resolution.clear()
         self.cbx_spatial_resolution.addItems( [ k for k in self.config_collection[ collection ]['spatial_res_composite'].keys() ] )
+
+    @pyqtSlot()
+    def on_SelectFolderVRT(self)->None:
+        dir = QFileDialog.getExistingDirectory(
+            self.iface.mainWindow(),
+            self._title_folder,
+            '' if self.btn_folder.toolTip == self._title_folder else self.btn_folder.toolTip(),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        if dir:
+            self.btn_folder.setToolTip( dir )
+            self.setting.setValue( self.setting_key_vrt_dir, dir )
+
+    @pyqtSlot()
+    def on_CaptureExtent(self)->None:
+        canvas = self.iface.mapCanvas()
+        if not canvas:
+            return
+
+        self._bbox = self.btn_extent.getExtent()
+
+        scale = canvas.scale()
+        canvas.zoomScale( scale * 1.1)
+        self.btn_extent.hl_manager.blink()
 
     @pyqtSlot()
     def on_ToggleRun(self)->None:
@@ -385,30 +417,6 @@ class BdcCatalogWidget(QWidget):
         if not is_run_current:
             self.btn_toggle.setEnabled(False)
             return
-
-    @pyqtSlot()
-    def on_CaptureExtent(self)->None:
-        canvas = self.iface.mapCanvas()
-        if not canvas:
-            return
-
-        self._bbox = self.btn_extent.getExtent()
-
-        scale = canvas.scale()
-        canvas.zoomScale( scale * 1.1)
-        self.btn_extent.hl_manager.blink()
-
-    @pyqtSlot()
-    def on_SelectFolderVRT(self)->None:
-        dir = QFileDialog.getExistingDirectory(
-            self.iface.mainWindow(),
-            self._title_folder,
-            '' if self.btn_folder.toolTip == self._title_folder else self.btn_folder.toolTip(),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        if dir:
-            self.btn_folder.setToolTip( dir )
-            self.setting.setValue( self.SETTINGS_KEY, dir )
 
     @pyqtSlot()
     def finished(self)->None:

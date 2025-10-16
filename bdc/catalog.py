@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- BDC Catalog
-                                 A QGIS plugin
- Plugin to access Brasil Data Cube for show COG scenes
+ Catalog
+ 
+ Catalog manager for processor and widget
                              -------------------
-        begin                : 2025-09-02
+        begin                : 2025-10-15
         copyright            : (C) 2025 by Luiz Motta
         email                : motta.luiz@gmail.com
 
@@ -19,25 +19,28 @@
  ***************************************************************************/
  """
 
+from typing import Any
 from qgis.PyQt.QtCore import QObject, pyqtSlot
 
 from qgis.gui import QgisInterface
 
-from .config import configCollection
+from .catalogwidget import CatalogWidget
+from .stacprocessor import StacProcessor
 
-from .bdc_stac_processor import BDCStacProcessor
-from .bdc_widget import BdcCatalogWidget
-
-
-class BDCCatalog(QObject):
-    def __init__(self, iface:QgisInterface):
+class Catalog(QObject):
+    def __init__(self,
+            iface:QgisInterface,
+            config_collection:dict,
+            widget:CatalogWidget,
+            processor:StacProcessor            
+        ):
         super().__init__()
 
         self.iface = iface
 
-        self.config_collection = configCollection()
-        self.processor = BDCStacProcessor( iface )
-        self.widget = BdcCatalogWidget( iface, self.processor.isCancelled, self.config_collection )
+        self.config_collection = config_collection
+        self.processor = processor
+        self.widget = widget
 
         self.widget.goProcess.connect( self.runProcess )
         self.widget.cancelProcess.connect( self.processor.cancelCurrentTask )

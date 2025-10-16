@@ -73,7 +73,7 @@ class TaskProcessor(QObject):
     def setTask(self, task:QgsTask, collection:str)->None:
         self._task = task
         self.collection = collection
-        msg = tr("{} - Processing").format( self.collection )
+        msg = tr("{} - Processing...").format( self.collection )
         self.messageStatus.emit( msg )
 
     @pyqtSlot(dict)
@@ -93,6 +93,7 @@ class TaskProcessor(QObject):
         self.message_log.logMessage( message['text'], 'BDC Catalog', level=level )
 
     def messageBar(self, message:dict)->None:
+        self.message_bar.popWidget()
         level = message['level'] if 'level' in message else Qgis.Info
         self.message_bar.pushMessage( self.custom_name, message['text'], level, 5 )
 
@@ -101,7 +102,7 @@ class TaskProcessor(QObject):
         self._mosaic_group = QgsLayerTreeGroup( name )
         root.insertChildNode(0, self._mosaic_group)
 
-    def footprintStatus(self, status:dict)->dict:
+    def footprintStatus(self, status:dict)->None:
         self._task.setProgress( int( (status['returned'] / status['matched']) * 100 ) )
         msg = f"{self.collection} - {status['label']}"
         self.messageStatus.emit( msg )
@@ -131,13 +132,14 @@ class TaskProcessor(QObject):
 
     def addLayerMosaicGroup(self, status:dict)->None:
         name = os.path.splitext(os.path.basename(status['filepath']))[0]
-        layer = QgsRasterLayer( status['filepath'], name )
-        layer.setCustomProperty( self.custom_name, json.dumps({ 'layers': status['layers'] }) )
-
-        self._addLayerToMosaicGroup( layer )
-        self._task.setProgress( int( (status['mosaic_count'] / status['mosaic_total']) * 100 ) )
         msg = tr("{} - Mosaic {} of {}: {} ({})").format( self.collection, status['mosaic_count'], status['mosaic_total'], name, status['total_raster'] )
         self.messageStatus.emit( msg )
+        self._task.setProgress( int( (status['mosaic_count'] / status['mosaic_total']) * 100 ) )
+        
+        layer = QgsRasterLayer( status['filepath'], name )
+        layer.setCustomProperty( self.custom_name, json.dumps({ 'layers': status['layers'] }) )
+        self._addLayerToMosaicGroup( layer )
+        
 
 
 class TaskNotifier(QObject):

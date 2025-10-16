@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- BDC Catalog
-                                 A QGIS plugin
- Plugin to access Brasil Data Cube for show COG scenes
+ Manager task processing
                              -------------------
-        begin                : 2025-09-02
+        begin                : 2025-10-15
         copyright            : (C) 2025 by Luiz Motta
         email                : motta.luiz@gmail.com
 
@@ -18,7 +16,6 @@
  *                                                                         *
  ***************************************************************************/
  """
-
 
 import json
 import os
@@ -44,24 +41,32 @@ from qgis.core import (
 )
 from qgis.gui import QgisInterface
 
-from .bdc_stac import BDCStacClient
-from .bdc_taskmanager import TaskNotifier, TaskProcessor, TaskDebugger
-from .vsicurl_open import setConfigOptionUrl, setConfigClearUrl
+from .taskmanager import TaskNotifier, TaskProcessor, TaskDebugger
+from .stacclient import StacClient
+
 from .translate import tr
+from .vsicurl_open import setConfigOptionUrl, setConfigClearUrl
 
 
-class BDCStacProcessor(QObject):
+class StacProcessor(QObject):
     finished = pyqtSignal()
-    def __init__(self, iface:QgisInterface):
+    addMosaicScenes = pyqtSignal()
+    def __init__(self,
+            iface:QgisInterface,
+            task_notifier:TaskNotifier,
+            task_processor:TaskProcessor,
+            stac_client:StacClient
+        ):
         super().__init__()
-        self._notifier = TaskNotifier()
-        self._processor = TaskProcessor( iface, 'BDC Catalog' )
-        self._notifier.sendData.connect( self._processor.process )
-        self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
+        self._notifier = task_notifier
+        self._processor = task_processor
+        self._client = stac_client
 
-        self._client = BDCStacClient( self._notifier )
-        self._vrt_options = None
+        self._use_url_file = True # stac_client
+
+        self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
         
+        self._vrt_options = None
         self.spatial_resolution = None
         self.dates = None
         self.dir_mosaic = None
@@ -81,8 +86,11 @@ class BDCStacProcessor(QObject):
         self.task_id = None
         self.is_task_canceled = False
 
+        self.addMosaicScenes.connect( self._onAddMosaicScenes )
+
     def setCollection(self, collection:dict)->None:
         self._client.collection = collection
+
         self._vrt_options = { 'separate': True, 'bandList': [1]  }
         if 'nodata' in self._client.collection:
             self._vrt_options['srcNodata'] = self._client.collection['nodata']
@@ -139,7 +147,8 @@ class BDCStacProcessor(QObject):
             writer = None
 
         def on_finished(exception, data:dict)->None:
-            setConfigClearUrl()
+            if self._use_url_file:
+                setConfigClearUrl()
 
             self._is_ok_last_processed = False
 
@@ -171,11 +180,11 @@ class BDCStacProcessor(QObject):
             self._processor.createMosaicGroup(f"mosaic.{self._str_search}")
             dir_mosaic_scenes = os.path.join( self.dir_mosaic, self._str_search )
             os.makedirs( dir_mosaic_scenes, exist_ok=True )
-            self._addMosaicScenes()
+
+            self.addMosaicScenes.emit()
 
         def run(task:QgsTask)->dict:
-            footprint_band = self._client.collection['spatial_res_composite'][ self.spatial_resolution ][0]
-            is_ok =  self._client.search( self.bbox, self.dates, footprint_band, task.isCanceled )
+            is_ok =  self._client.search( self.bbox, self.dates, task.isCanceled )
             if not is_ok:
                 if task.isCanceled():
                     self.is_task_canceled = True
@@ -198,7 +207,8 @@ class BDCStacProcessor(QObject):
             'bbox': self.bbox            
         }
 
-        setConfigOptionUrl()
+        if self._use_url_file:
+            setConfigOptionUrl()
 
         self._total_scenes = None
         self._total_mosaic = None
@@ -215,9 +225,11 @@ class BDCStacProcessor(QObject):
         # on_finished(None,  run(task) )
         #
 
-    def _addMosaicScenes(self)->None:
+    def _onAddMosaicScenes(self)->None:
         def on_finished(exception, data=None)->None:
-            setConfigClearUrl()
+            if self._use_url_file:
+                setConfigClearUrl()
+
             if exception:
                 self._notifier.message( { 'text': str(exception), 'level': Qgis.Critical }, type='message_bar' )
                 self.finished.emit()
@@ -280,7 +292,6 @@ class BDCStacProcessor(QObject):
                     # 'band_names': band_names
                 }
 
-
             scene_list = self._client.getScenesByDateOrbitsCRS( self.spatial_resolution )
             mosaic_count = 0
             self._mosaic_total = len( scene_list )
@@ -295,7 +306,7 @@ class BDCStacProcessor(QObject):
                         args['level'] = Qgis.Critical
                     self._notifier.message( args, type='message_bar' )
                     return
-
+                
                 mosaic_count += 1
                 args = {
                     'filepath': r['filepath'],
@@ -307,13 +318,14 @@ class BDCStacProcessor(QObject):
                 }
                 self._notifier.addLayerMosaicGroup(**args)
 
+        if self._use_url_file:
+            setConfigOptionUrl()
 
-        setConfigOptionUrl()
         name = f"Create Mosaics - {self._str_search}"
         task = QgsTask.fromFunction( name, run, on_finished=on_finished )
         self._processor.setTask( task, self._client.collection['id'] )
         self.taskManager.addTask( task )
-        self.task_id = self.taskManager.taskId(task)
+        self.task_id = self.taskManager.taskId( task )
         
         # DEBUGGER
         # task = TaskDebugger()
@@ -337,6 +349,13 @@ class BDCStacProcessor(QObject):
             
             return count == total
 
+        r = self._client.setToken( self._client.collection['id'] )
+        if not r['is_ok']:
+            msg = tr('Error requesting a token {}.').format( self._client.TOKEN_URL.format( self._client.collection['id'] ))
+            self._notifier.message( { 'text': msg, 'level': Qgis.Critical }, type='message_bar' )
+            self.finished.emit()
+            return
+
         bbox_str = '_'.join( [ f"{c:.4f}" for c in self.bbox ] )
         self._str_search = f"{self._client.collection['id']}_{'_'.join( self.dates )}_{bbox_str}"
         self.is_task_canceled = False
@@ -351,7 +370,7 @@ class BDCStacProcessor(QObject):
 
         fetchData = False if ( self._is_ok_last_processed and exists_processed ) else True
         if not fetchData:
-            self._addMosaicScenes()
+            self._onAddMosaicScenes()
             return
 
         self._search() # Call _addMosaicScenes
