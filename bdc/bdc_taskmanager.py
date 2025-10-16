@@ -1,3 +1,22 @@
+# -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ Manager Task for Catalog
+                             -------------------
+        begin                : 2025-10-15
+        copyright            : (C) 2025 by Luiz Motta
+        email                : motta.luiz@gmail.com
+
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+"""
+
 import json
 import os
 from typing import Union, List
@@ -34,11 +53,12 @@ class TaskDebugger():
 
 class TaskProcessor(QObject):
     messageStatus = pyqtSignal(str)
-    def __init__(self, iface:QgisInterface):
+    def __init__(self, iface:QgisInterface, title:str):
         super().__init__()
         self.project = QgsProject.instance()
         self._task = None
         self._mosaic_group = None
+        self.custom_name = title
         self.collection = None
         self.message_log = QgsMessageLog()
         self.message_bar = iface.messageBar()
@@ -74,7 +94,7 @@ class TaskProcessor(QObject):
 
     def messageBar(self, message:dict)->None:
         level = message['level'] if 'level' in message else Qgis.Info
-        self.message_bar.pushMessage('BDC Catalog', message['text'], level, 5 )
+        self.message_bar.pushMessage( self.custom_name, message['text'], level, 5 )
 
     def createMosaicGroup(self, name:str)->None:
         root = self.project.layerTreeRoot()
@@ -100,7 +120,7 @@ class TaskProcessor(QObject):
         layer = QgsVectorLayer( filepath, name, 'ogr' )
         if 'style' in source: 
             addStyle( layer )
-        layer.setCustomProperty( 'bdc_catalog', json.dumps({ 'bbox': source['bbox'] }) )        
+        layer.setCustomProperty( self.custom_name, json.dumps({ 'bbox': source['bbox'] }) )        
         if source['add_group']:
             self._addLayerToMosaicGroup( layer )
             return
@@ -112,7 +132,7 @@ class TaskProcessor(QObject):
     def addLayerMosaicGroup(self, status:dict)->None:
         name = os.path.splitext(os.path.basename(status['filepath']))[0]
         layer = QgsRasterLayer( status['filepath'], name )
-        layer.setCustomProperty( 'bdc_catalog', json.dumps({ 'layers': status['layers'] }) )
+        layer.setCustomProperty( self.custom_name, json.dumps({ 'layers': status['layers'] }) )
 
         self._addLayerToMosaicGroup( layer )
         self._task.setProgress( int( (status['mosaic_count'] / status['mosaic_total']) * 100 ) )

@@ -1,3 +1,25 @@
+# -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ BDC Catalog
+                                 A QGIS plugin
+ Plugin to access Brasil Data Cube for show COG scenes
+                             -------------------
+        begin                : 2025-09-02
+        copyright            : (C) 2025 by Luiz Motta
+        email                : motta.luiz@gmail.com
+
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+ """
+
+
 import json
 import os
 from typing import List
@@ -33,7 +55,7 @@ class BDCStacProcessor(QObject):
     def __init__(self, iface:QgisInterface):
         super().__init__()
         self._notifier = TaskNotifier()
-        self._processor = TaskProcessor( iface )
+        self._processor = TaskProcessor( iface, 'BDC Catalog' )
         self._notifier.sendData.connect( self._processor.process )
         self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
 

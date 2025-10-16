@@ -1,5 +1,25 @@
-from typing import Callable, List
+# -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ BDC Catalog
+                                 A QGIS plugin
+ Plugin to access Brasil Data Cube for show COG scenes
+                             -------------------
+        begin                : 2025-09-02
+        copyright            : (C) 2025 by Luiz Motta
+        email                : motta.luiz@gmail.com
 
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+ """
+
+from typing import Callable, List
 
 from qgis.PyQt.QtCore import (
     Qt, QObject,

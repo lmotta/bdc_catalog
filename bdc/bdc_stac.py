@@ -1,3 +1,24 @@
+# -*- coding: utf-8 -*-
+"""
+/***************************************************************************
+ BDC Catalog
+                                 A QGIS plugin
+ Plugin to access Brasil Data Cube for show COG scenes
+                             -------------------
+        begin                : 2025-09-02
+        copyright            : (C) 2025 by Luiz Motta
+        email                : motta.luiz@gmail.com
+
+/***************************************************************************
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ ***************************************************************************/
+ """
+
 import requests
 import json
 from typing import Callable, List
@@ -29,13 +50,14 @@ def intersects(bbox: list, json_geom: dict)->bool:
 
 
 class BDCStacClient():
-    SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'  
-    LIMIT = 10
     def __init__(self, notifier:TaskNotifier):
         def sr4326():
             sr = osr.SpatialReference()
             sr.ImportFromEPSG( 4326 )
             return sr
+
+        self.SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'  
+        self.LIMIT = 10
 
         self.notifier = notifier
         self.collection = None # dict
@@ -52,6 +74,32 @@ class BDCStacClient():
         
         self._srs4326 = sr4326()
 
+    def _getResponse(self, args:dict)->dict:
+        msg_error = None
+        try:
+            response = self._session.get( **args)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as err:
+            msg_error = str(err)
+        except requests.exceptions.Timeout:
+            msg_error = tr("The request has timed out ({}).\nPlease check your internet connection or try again later").format( self.SEARCH_URL )
+        except requests.exceptions.RequestException as err:
+            msg_error = str(err)
+        
+        if not msg_error is None:
+            return {
+                'is_ok': False,
+                'message': msg_error
+            }
+        
+        return {
+            'is_ok': True,
+            'response': response
+        }
+
+    def getFeatures(self)->List[dict]:
+        return self._features
+
     def search(
             self,
             bbox:list,
@@ -59,33 +107,11 @@ class BDCStacClient():
             footprint_band:str,
             isCanceled:Callable[[str], None]
         )->dict:
-        def getResponse(args:dict)->dict:
-            msg_error = None
-            try:
-                response = self._session.get( **args)
-                response.raise_for_status()
-            except requests.exceptions.HTTPError as err:
-                msg_error = str(err)
-            except requests.exceptions.Timeout:
-                msg_error = tr("The request has timed out ({}).\nPlease check your internet connection or try again later").format( self.SEARCH_URL )
-            except requests.exceptions.RequestException as err:
-                msg_error = str(err)
-            
-            if not msg_error is None:
-                return {
-                    'is_ok': False,
-                    'message': msg_error
-                }
-            
-            return {
-                'is_ok': True,
-                'response': response
-            }
-        
         def processResponse(response)->dict:
             def getCRS(ds)->dict:
                 sr = ds.GetSpatialRef()
-                return f"{sr.GetAuthorityName(None)}-{sr.GetAuthorityCode(None)}"
+                #return f"{sr.GetAuthorityName(None)}-{sr.GetAuthorityCode(None)}"
+                return sr.GetAuthorityCode(None)
 
             def getSpatiaResolution(url:str)->dict:
                 r = openUrl( url )
@@ -227,14 +253,14 @@ class BDCStacClient():
                 'bbox': ','.join( str(f) for f in bbox ),
                 'datetime': f"{dates[0]}T00:00:00Z/{dates[1]}T00:00:00Z"
             }
-            r = getResponse( {'url': self.SEARCH_URL, 'timeout': 10, 'params': p} )
+            r = self._getResponse( {'url': self.SEARCH_URL, 'timeout': 10, 'params': p} )
             if not r['is_ok']:
                 return r
 
             return processResponse( r['response'] )
 
         def fetchNextPage(url:str)->dict:
-            r = getResponse( {'url':url, 'timeout': 10} )
+            r = self._getResponse( {'url':url, 'timeout': 10} )
             if not r['is_ok']:
                 return r
 
@@ -306,6 +332,3 @@ class BDCStacClient():
             scene_list[ scene_key ].append( urls )
         
         return scene_list
-
-    def getFeatures(self)->List[dict]:
-        return self._features
