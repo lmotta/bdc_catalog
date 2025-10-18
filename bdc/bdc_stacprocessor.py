@@ -25,38 +25,19 @@ import os
 from .stacprocessor import (
     StacProcessor,
     QgisInterface, QgsTask,
-    TaskNotifier,
     TaskProcessor,
-    StacClient,
-    tr
+    StacClient
 )
 
 
 class BDCStacProcessor(StacProcessor):
     def __init__(self,
             iface:QgisInterface,
-            task_notifier:TaskNotifier,
             task_processor:TaskProcessor,
             stac_client:StacClient
         ):
-        super().__init__( iface, task_notifier, task_processor, stac_client )
+        super().__init__( iface, task_processor, stac_client )
 
-    def _search_run(self, task:QgsTask)->dict:
+    def _search_run(self, task:QgsTask)->bool:
         footprint_band = self._client.collection['spatial_res_composite'][ self.spatial_resolution ][0]
-        is_ok =  self._client.search( self.bbox, self.dates, footprint_band, task.isCanceled )
-        if not is_ok:
-            if task.isCanceled():
-                self.is_task_canceled = True
-            return { 'is_ok': is_ok }
-
-        features = self._client.getFeatures()
-        if not len( features):
-            return { 'is_ok': True }
-
-        filepath = os.path.join( self.dir_mosaic, f"footprint.{self._str_search}.geojson" )
-        self._createFootprintLayerFile( filepath, 'GeoJSON', features )
-        source = {'filepath': filepath, 'add_group': False, 'color': 'Gray', 'opacity': 0.1 }
-        
-        return { 'is_ok': True, 'source': source }
-
-        return self.is_task_canceled
+        return self._client.search( self.bbox, self.dates, footprint_band, self.requestProcessData, task.isCanceled )

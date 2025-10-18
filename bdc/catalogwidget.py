@@ -151,11 +151,10 @@ class ToolButtonExtent(QToolButton):
 
 
 class CatalogWidget(QWidget):
-    goProcess = pyqtSignal(dict)
+    requestProcessData = pyqtSignal(dict)
     cancelProcess = pyqtSignal()
     def __init__(self,
             iface:QgisInterface,
-            isCancelled:Callable[[None], bool],
             config_collection:dict,
             setting_key:str
         ):
@@ -271,10 +270,10 @@ class CatalogWidget(QWidget):
 
         super().__init__( iface.mainWindow() )
 
-        self.isCancelled = isCancelled
+        self.iface = iface
         self.config_collection = config_collection
-        self.setting_key_vrt_dir = f"{setting_key}/vrt_dir"
 
+        self.setting_key_vrt_dir = f"{setting_key}/vrt_dir"
         self._toggle_button_run = {
             True: {
                 'icon': QgsApplication.getThemeIcon('mTaskRunning.svg'),
@@ -288,7 +287,6 @@ class CatalogWidget(QWidget):
             }
         }
         self._bbox = None
-        self.iface = iface
         self.project = QgsProject.instance()
         self.setting = QgsSettings()
 
@@ -412,7 +410,7 @@ class CatalogWidget(QWidget):
         is_run_current = self.btn_toggle.is_run
         self._toggleButton(False) 
 
-        self.goProcess.emit( values() ) if is_run_current else self.cancelProcess.emit()
+        self.requestProcessData.emit( values() ) if is_run_current else self.cancelProcess.emit()
         
         if not is_run_current:
             self.btn_toggle.setEnabled(False)

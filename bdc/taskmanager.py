@@ -58,7 +58,7 @@ class TaskProcessor(QObject):
         self.project = QgsProject.instance()
         self._task = None
         self._mosaic_group = None
-        self.custom_name = title
+        self.propertyName = title
         self.collection = None
         self.message_log = QgsMessageLog()
         self.message_bar = iface.messageBar()
@@ -89,13 +89,11 @@ class TaskProcessor(QObject):
         methods[ payload['type'] ]( payload['data'] )
 
     def messageLog(self, message:dict)->None:
-        level = message['level'] if 'level' in message else Qgis.Info
-        self.message_log.logMessage( message['text'], 'BDC Catalog', level=level )
+        self.message_log.logMessage( message=message['text'], tag=self.propertyName, level=message['level'] )
 
     def messageBar(self, message:dict)->None:
         self.message_bar.popWidget()
-        level = message['level'] if 'level' in message else Qgis.Info
-        self.message_bar.pushMessage( self.custom_name, message['text'], level, 5 )
+        self.message_bar.pushMessage( title=self.propertyName, text=message['text'], level=message['level'], duration=5 )
 
     def createMosaicGroup(self, name:str)->None:
         root = self.project.layerTreeRoot()
@@ -103,7 +101,7 @@ class TaskProcessor(QObject):
         root.insertChildNode(0, self._mosaic_group)
 
     def footprintStatus(self, status:dict)->None:
-        self._task.setProgress( int( (status['returned'] / status['matched']) * 100 ) )
+        self._task.setProgress( int( (status['count'] / status['total']) * 100 ) )
         msg = f"{self.collection} - {status['label']}"
         self.messageStatus.emit( msg )
 
@@ -121,7 +119,7 @@ class TaskProcessor(QObject):
         layer = QgsVectorLayer( filepath, name, 'ogr' )
         if 'style' in source: 
             addStyle( layer )
-        layer.setCustomProperty( self.custom_name, json.dumps({ 'bbox': source['bbox'] }) )        
+        layer.setCustomProperty( self.propertyName, json.dumps({ 'bbox': source['bbox'] }) )        
         if source['add_group']:
             self._addLayerToMosaicGroup( layer )
             return
@@ -137,46 +135,5 @@ class TaskProcessor(QObject):
         self._task.setProgress( int( (status['mosaic_count'] / status['mosaic_total']) * 100 ) )
         
         layer = QgsRasterLayer( status['filepath'], name )
-        layer.setCustomProperty( self.custom_name, json.dumps({ 'layers': status['layers'] }) )
+        layer.setCustomProperty( self.propertyName, json.dumps({ 'layers': status['layers'] }) )
         self._addLayerToMosaicGroup( layer )
-        
-
-
-class TaskNotifier(QObject):
-    sendData = pyqtSignal(dict)
-    def __init__(self):
-        super().__init__()
-
-    def message(self, message:dict, type:str='message_log')->None:
-        self.sendData.emit( {'type': type, 'data': message } )
-
-    def createMosaicGroup(self, name:str)->None:
-        self.sendData.emit( {'type': 'create_mosaic_group', 'data': name } )
-
-    def footprintStatus(self, label:str, matched:int, returned:int)->None:
-        self.sendData.emit( {
-            'type': 'footprint_status',
-            'data': { 'label': label, 'matched': matched, 'returned': returned }
-        })
-
-    def addVectorLayer(self, source:dict)->None:
-        self.sendData.emit( {'type': 'add_layer_vector', 'data': source } )
-
-    def addLayerMosaicGroup(
-            self,
-            filepath:str,
-            layers:List[str],
-            total_raster:int,
-            mosaic_count:int,
-            mosaic_total:int
-        )->None:
-        self.sendData.emit({
-            'type': 'add_layer_mosaic_group',
-            'data': {
-                'filepath': filepath,
-                'layers': layers,
-                'total_raster': total_raster,
-                'mosaic_count': mosaic_count,
-                'mosaic_total': mosaic_total
-            }
-        })

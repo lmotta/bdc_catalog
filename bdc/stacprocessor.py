@@ -21,6 +21,8 @@ import json
 import os
 from typing import List
 
+from abc import abstractmethod
+
 from osgeo import gdal
 gdal.UseExceptions()
 
@@ -29,7 +31,6 @@ from qgis.PyQt.QtCore import (
     QMetaType,
     pyqtSlot, pyqtSignal
 )
-from qgis.PyQt.QtGui import QColor
 
 from qgis.core import (
     QgsApplication, QgsProject,
@@ -41,25 +42,24 @@ from qgis.core import (
 )
 from qgis.gui import QgisInterface
 
-from .taskmanager import TaskNotifier, TaskProcessor, TaskDebugger
+from .taskmanager import TaskProcessor, TaskDebugger
 from .stacclient import StacClient
 
 from .translate import tr
-from .vsicurl_open import setConfigOptionUrl, setConfigClearUrl
 
 
 class StacProcessor(QObject):
     finished = pyqtSignal()
     addMosaicScenes = pyqtSignal()
+    requestProcessData = pyqtSignal(dict)
     def __init__(self,
             iface:QgisInterface,
-            task_notifier:TaskNotifier,
             task_processor:TaskProcessor,
             stac_client:StacClient
         ):
         super().__init__()
-        self._notifier = task_notifier
-        self._processor = task_processor
+        self.task_processor = task_processor
+        self.requestProcessData.connect( self.task_processor.process )
         self._client = stac_client
 
         self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
@@ -86,6 +86,10 @@ class StacProcessor(QObject):
 
         self.addMosaicScenes.connect( self._onAddMosaicScenes )
 
+    @abstractmethod
+    def _search_run(self, task:QgsTask)->bool:
+        pass
+
     def setCollection(self, collection:dict)->None:
         self._client.collection = collection
 
@@ -94,81 +98,64 @@ class StacProcessor(QObject):
             self._vrt_options['srcNodata'] = self._client.collection['nodata']
         self._vrt_options = gdal.BuildVRTOptions( **self._vrt_options )
 
-    def _createFootprintLayerFile(self, filepath:str, driver:str, features:dict)->None:
-        # Create layer
-        field_types = [
-            {
-                'name': 'id',
-                'type': QMetaType.QString,
-                'length': 100,
-            },
-            {
-                'name': 'properties',
-                'type': QMetaType.QString,
-                'length': 500,
-            },
-            {
-                'name': 'bands',
-                'type': QMetaType.QString,
-                'length': 0, # Unlimit
-            }
-        ]
-        fields = QgsFields()
-        for field in field_types:
-            fields.append(
-                QgsField( name=field['name'], type=field['type'], len=field['length'] )
-            )
-        asset = list( features.keys() )[0]
-        geom = QgsJsonUtils.geometryFromGeoJson(json.dumps( features[ asset ]['geometry'] ) )
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = driver
-        writer = QgsVectorFileWriter.create(
-            filepath,
-            fields,
-            geom.wkbType(),
-            QgsCoordinateReferenceSystem('EPSG:4326'),
-            self.project.transformContext(),
-            options
-        )
-        # Populate
-        for asset, data in features.items():
-            feature = QgsFeature()
-
-            geom = QgsJsonUtils.geometryFromGeoJson(json.dumps(data['geometry']))
-            feature.setGeometry( geom )
-
-            atts = [asset] + [ json.dumps( data[k] ) for k in data if not k == 'geometry' ]
-            feature.setAttributes( atts )
-
-            writer.addFeature( feature )
-        writer = None
-
-    def _search_run(self, task:QgsTask)->dict:
-        is_ok =  self._client.search( self.bbox, self.dates, task.isCanceled )
-        if not is_ok:
-            if task.isCanceled():
-                self.is_task_canceled = True
-            return { 'is_ok': is_ok }
-
-        features = self._client.getFeatures()
-        if not len( features):
-            return { 'is_ok': True }
-
-        filepath = os.path.join( self.dir_mosaic, f"footprint.{self._str_search}.geojson" )
-        self._createFootprintLayerFile( filepath, 'GeoJSON', features )
-        source = {'filepath': filepath, 'add_group': False, 'color': 'Gray', 'opacity': 0.1 }
-        
-        return { 'is_ok': True, 'source': source }
-
     def _search(self)->None:
-        def on_finished(exception, data:dict)->None:
-            if self._client.use_url_file:
-                setConfigClearUrl()
+        def createFootprintLayerFile(filepath:str, driver:str, features:dict)->None:
+            # Create layer
+            field_types = [
+                {
+                    'name': 'id',
+                    'type': QMetaType.QString,
+                    'length': 100,
+                },
+                {
+                    'name': 'properties',
+                    'type': QMetaType.QString,
+                    'length': 500,
+                },
+                {
+                    'name': 'bands',
+                    'type': QMetaType.QString,
+                    'length': 0, # Unlimit
+                }
+            ]
+            fields = QgsFields()
+            for field in field_types:
+                fields.append(
+                    QgsField( name=field['name'], type=field['type'], len=field['length'] )
+                )
+            asset = list( features.keys() )[0]
+            geom = QgsJsonUtils.geometryFromGeoJson(json.dumps( features[ asset ]['geometry'] ) )
+            options = QgsVectorFileWriter.SaveVectorOptions()
+            options.driverName = driver
+            writer = QgsVectorFileWriter.create(
+                filepath,
+                fields,
+                geom.wkbType(),
+                QgsCoordinateReferenceSystem('EPSG:4326'),
+                self.project.transformContext(),
+                options
+            )
+            # Populate
+            for asset, data in features.items():
+                feature = QgsFeature()
 
+                geom = QgsJsonUtils.geometryFromGeoJson(json.dumps(data['geometry']))
+                feature.setGeometry( geom )
+
+                atts = [asset] + [ json.dumps( data[k] ) for k in data if not k == 'geometry' ]
+                feature.setAttributes( atts )
+
+                writer.addFeature( feature )
+            writer = None
+
+        def on_finished(exception, data:dict)->None:
             self._is_ok_last_processed = False
 
             if exception:
-                self._notifier.message( { 'text': str(exception), 'level': Qgis.Critical }, type='message_bar' )
+                self.requestProcessData.emit({
+                    'type': 'message_bar',
+                    'data': { 'text': str(exception), 'level': Qgis.Critical }
+                })
                 self.finished.emit()
                 return
 
@@ -190,13 +177,29 @@ class StacProcessor(QObject):
 
             data['source']['style'] = self._footprint_style
             data['source']['bbox'] = self.bbox
-            self._processor.addVectorLayer( data['source'] )
+            self.task_processor.addVectorLayer( data['source'] )
             
-            self._processor.createMosaicGroup(f"mosaic.{self._str_search}")
+            self.task_processor.createMosaicGroup(f"mosaic.{self._str_search}")
             dir_mosaic_scenes = os.path.join( self.dir_mosaic, self._str_search )
             os.makedirs( dir_mosaic_scenes, exist_ok=True )
 
             self.addMosaicScenes.emit()
+
+        def run(task:QgsTask)->dict:
+            if not self._search_run( task ):
+                if task.isCanceled():
+                    self.is_task_canceled = True
+                return { 'is_ok': False }
+
+            features = self._client.getFeatures()
+            if not len( features):
+                return { 'is_ok': True }
+
+            filepath = os.path.join( self.dir_mosaic, f"footprint.{self._str_search}.geojson" )
+            createFootprintLayerFile( filepath, 'GeoJSON', features )
+            source = {'filepath': filepath, 'add_group': False, 'color': 'Gray', 'opacity': 0.1 }
+            
+            return { 'is_ok': True, 'source': source }
 
         self._last_search_params = {
             'collection': self._client.collection['id'],
@@ -205,31 +208,28 @@ class StacProcessor(QObject):
             'bbox': self.bbox            
         }
 
-        if self._client.use_url_file:
-            setConfigOptionUrl()
-
         self._total_scenes = None
         self._total_mosaic = None
 
         name = f"Create Footprint - {self._str_search}"
-        task = QgsTask.fromFunction( name, self._search_run, on_finished=on_finished )
-        self._processor.setTask( task, self._client.collection['id'] )
+        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        self.task_processor.setTask( task, self._client.collection['id'] )
         self.taskManager.addTask( task )
         self.task_id = self.taskManager.taskId(task)
 
         # DEBUGGER
         # task = TaskDebugger()
-        # self._processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None, self._search_run(task) )
+        # self.task_processor.setTask( task, self._client.collection['id'] )
+        # on_finished(None,  run(task) )
         #
 
     def _onAddMosaicScenes(self)->None:
         def on_finished(exception, data=None)->None:
-            if self._client.use_url_file:
-                setConfigClearUrl()
-
             if exception:
-                self._notifier.message( { 'text': str(exception), 'level': Qgis.Critical }, type='message_bar' )
+                self.requestProcessData.emit({
+                    'type': 'message_bar',
+                    'data': { 'text': str(exception), 'level': Qgis.Critical }
+                })
                 self.finished.emit()
                 return
 
@@ -238,7 +238,11 @@ class StacProcessor(QObject):
                 return
 
             msg = tr('Success - {} scenes - {} mosaics').format( self._scenes_total, self._mosaic_total )
-            self._notifier.message( { 'text': msg, 'level': Qgis.Success }, type='message_bar' )
+            self.requestProcessData.emit({
+                'type': 'message_bar',
+                'data': { 'text': msg, 'level': Qgis.Success }
+            })
+
             self.finished.emit()
 
         def run(task:QgsTask)->None:
@@ -294,15 +298,21 @@ class StacProcessor(QObject):
             mosaic_count = 0
             self._mosaic_total = len( scene_list )
             msg = tr('Mosaic: {} total (Spatial resolution: {})').format(self._mosaic_total, self.spatial_resolution)
-            self._notifier.message( { 'text': msg } )
+            self.requestProcessData.emit({
+                'type': 'message_log',
+                'data': { 'text': msg, 'level': Qgis.Info }
+            })
             for date_orbit_crs, data in scene_list.items():
                 r = createRasterMosaicVRT( data, date_orbit_crs )
                 if not r['is_ok']:
-                    args = { 'text': r['message'], 'level': Qgis.Warning }
+                    level = Qgis.Warning
                     if task.isCanceled():
                         self.is_task_canceled = True
-                        args['level'] = Qgis.Critical
-                    self._notifier.message( args, type='message_bar' )
+                        level = Qgis.Critical
+                    self.requestProcessData.emit({
+                        'type': 'message_bar',
+                        'data': { 'text': r['message'], 'level': level  }
+                    })
                     return
                 
                 mosaic_count += 1
@@ -314,20 +324,20 @@ class StacProcessor(QObject):
                     'mosaic_total': self._mosaic_total
                     # 'rgb_index': [ r['band_names'].index( b )+1 for b in self._client.collection['spatial_res_composite'][ self.spatial_resolution ] ]
                 }
-                self._notifier.addLayerMosaicGroup(**args)
-
-        if self._client.use_url_file:
-            setConfigOptionUrl()
-
+                self.requestProcessData.emit({
+                    'type': 'add_layer_mosaic_group',
+                    'data': args
+                })
+                
         name = f"Create Mosaics - {self._str_search}"
         task = QgsTask.fromFunction( name, run, on_finished=on_finished )
-        self._processor.setTask( task, self._client.collection['id'] )
+        self.task_processor.setTask( task, self._client.collection['id'] )
         self.taskManager.addTask( task )
         self.task_id = self.taskManager.taskId( task )
         
         # DEBUGGER
         # task = TaskDebugger()
-        # self._processor.setTask( task, self._client.collection['id'] )
+        # self.task_processor.setTask( task, self._client.collection['id'] )
         # on_finished(None, run(task))
         #
 
@@ -347,14 +357,6 @@ class StacProcessor(QObject):
             
             return count == total
 
-        if hasattr( self._client, 'setToken'):
-            r = self._client.setToken( self._client.collection['id'] )
-            if not r['is_ok']:
-                msg = tr('Error requesting a token {}.').format( self._client.TOKEN_URL.format( self._client.collection['id'] ))
-                self._notifier.message( { 'text': msg, 'level': Qgis.Critical }, type='message_bar' )
-                self.finished.emit()
-                return
-
         bbox_str = '_'.join( [ f"{c:.4f}" for c in self.bbox ] )
         self._str_search = f"{self._client.collection['id']}_{'_'.join( self.dates )}_{bbox_str}"
         self.is_task_canceled = False
@@ -363,7 +365,12 @@ class StacProcessor(QObject):
         exists_spatial_resolution = ( self.spatial_resolution == self._last_search_params['spatial_resolution'] )
         if self._is_ok_last_processed and exists_processed and exists_spatial_resolution:
             msg = tr("Search complete. Showing last result - {}.").format( self._str_search )
-            self._notifier.message( { 'text': msg, 'level': Qgis.Warning }, type='message_bar' )
+            self.requestProcessData.emit({
+                'type': 'message_bar',
+                'data': { 'text': msg, 'level': Qgis.Warning }
+            })
+
+
             self.finished.emit()
             return
 

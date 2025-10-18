@@ -24,13 +24,15 @@ from typing import Callable, List
 from osgeo import osr
 #gdal.SetConfigOption("GDAL_HTTP_HEADER", "Authorization: Bearer SEU_TOKEN")
 
-from .taskmanager import TaskNotifier
 from .translate import tr
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-class StacClient(ABC):
-    def __init__(self, notifier:TaskNotifier):
+from qgis.PyQt.QtCore import QObject, pyqtSignal
+
+
+class StacClient(QObject):
+    def __init__(self):
         def sr4326():
             sr = osr.SpatialReference()
             sr.ImportFromEPSG( 4326 )
@@ -39,7 +41,6 @@ class StacClient(ABC):
         self.SEARCH_URL = None # Sub Class
         self.LIMIT = 10
 
-        self.notifier = notifier
         self.collection = None # dict
 
         self._session = requests.Session()
@@ -85,6 +86,7 @@ class StacClient(ABC):
             self,
             bbox:list,
             dates:list,
+            requestProcessData:pyqtSignal,
             isCanceled:Callable[[str], None]
         )->dict:
         pass

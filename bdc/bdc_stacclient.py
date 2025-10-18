@@ -19,16 +19,15 @@
  ***************************************************************************/
  """
 
-import os
 import json
-import requests
-from typing import Callable, List
+from typing import Callable
 
 from osgeo import gdal, ogr
 
 from qgis.core import Qgis
 
-from .taskmanager import TaskNotifier
+from qgis.PyQt.QtCore import pyqtSignal
+
 from .translate import tr
 
 from .stacclient import StacClient
@@ -51,8 +50,8 @@ def intersects(bbox: list, json_geom: dict)->bool:
 
 
 class BDCStacClient(StacClient):
-    def __init__(self, notifier:TaskNotifier):
-        super().__init__( notifier )
+    def __init__(self):
+        super().__init__()
 
         self.SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'
         self.use_url_file = True
@@ -62,6 +61,7 @@ class BDCStacClient(StacClient):
             bbox:list,
             dates:list,
             footprint_band:str,
+            requestProcessData:pyqtSignal,
             isCanceled:Callable[[str], None]
         )->dict:
         def processResponse(response)->dict:
@@ -158,7 +158,10 @@ class BDCStacClient(StacClient):
                 count += 1
 
                 msg = tr("Request ({}) processing {} of {}").format( self._request_count, count, total )
-                self.notifier.footprintStatus( msg, total, count )
+                requestProcessData.emit({
+                    'type': 'footprint_status',
+                    'data': { 'label': msg, 'count': count, 'total': total }
+                })
 
                 url = f"{feat['assets'][ footprint_band ]['href']}"
                 r = openUrl( url )
@@ -233,20 +236,29 @@ class BDCStacClient(StacClient):
         def messageTotalFeatures(matched:int)->None:
             filtered = len(self._features)
             msg = tr("STAC - Totals: {} received, {} - filtered").format( matched, filtered )
-            self.notifier.message( { 'text': msg, 'level': Qgis.Info if filtered else Qgis.Warning } )
+            requestProcessData.emit( {
+                'type': 'message_log',
+                'data': { 'text': msg, 'level': Qgis.Info }
+            })
 
         self._request_count = 1
 
         self._features.clear()
         r = searchStacItems()
         if not r['is_ok']:
-            self.notifier.message( { 'text': r['message'], 'level': Qgis.Critical }, type='message_bar' )
+            requestProcessData.emit( {
+                'type': 'message_bar',
+                'data':{ 'text': r['message'], 'level': Qgis.Critical }
+            })
             return False
 
         matched = r['matched']
         if not matched:
             msg = tr("No scenes found in '{}' collection").format( self.collection['id'] )
-            self.notifier.message( { 'text': msg, 'level': Qgis.Info }, type='message_bar' )
+            requestProcessData.emit( {
+                'type': 'message_bar',
+                'data':{ 'text': msg, 'level': Qgis.Info }
+            })
             return True
 
         self._features = r['features']
@@ -261,13 +273,19 @@ class BDCStacClient(StacClient):
             self._request_count += 1
             r = fetchNextPage( r['url_next'] )
             if not r['is_ok']:
-                self.notifier.message( { 'text': r['message'], 'level': Qgis.Critical }, type='message_bar' )
+                requestProcessData.emit( {
+                    'type': 'message_bar',
+                    'data':{ 'text': r['message'], 'level': Qgis.Critical }
+                })
                 return False
 
             total_returned += r['returned']
             if not total_returned and r['url_next'] is None:
                 if not total_returned:
-                    self.notifier.message( { 'text': tr('No scenes found'), 'level': Qgis.Info }, type='message_bar' )
+                    requestProcessData.emit( {
+                        'type': 'message_bar',
+                        'data':{ 'text': tr('No scenes found'), 'level': Qgis.Info }
+                    })
                 return True
             
             if r['url_next'] is None:
@@ -275,7 +293,10 @@ class BDCStacClient(StacClient):
                 return True
 
             msg = tr("Footprint filtered: {} of {}").format( total_returned, matched )
-            self.notifier.message( { 'text': msg, 'level': Qgis.Info }, type='message_bar' )
+            requestProcessData.emit( {
+                'type': 'message_bar',
+                'data': { 'text': msg, 'level': Qgis.Info }
+            })
 
     def getScenesByDateOrbitsCRS(self, spatial_resolution:str)->dict:
         scene_list = {}

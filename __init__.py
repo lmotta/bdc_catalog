@@ -38,14 +38,16 @@ from qgis.PyQt.QtWidgets import  QAction
 
 from qgis.gui import QgisInterface
 
+from .bdc.taskmanager import TaskProcessor
+from .bdc.bdc_stacclient import BDCStacClient
+from .bdc.bdc_stacprocessor import BDCStacProcessor
 from .bdc.config import configCollection
+
 from .bdc.catalogwidget import CatalogWidget
 from .bdc.catalog import Catalog
-from .bdc.taskmanager import TaskNotifier, TaskProcessor
+
 from .bdc.translate import setTranslation
 
-from .bdc.bdc_stacprocessor import BDCStacProcessor
-from .bdc.bdc_stacclient import BDCStacClient
 
 def classFactory(iface:QgisInterface):
     return BDCCatalogPlugin(iface)
@@ -63,11 +65,9 @@ class BDCCatalogPlugin(QObject):
         self.bdc_action = None
 
         # Catalog Widget
-        task_notifier = TaskNotifier()
         task_processor = TaskProcessor( self.iface, 'BDC Catalog' )
-        task_notifier.sendData.connect( task_processor.process )
-        client = BDCStacClient( task_notifier )
-        self._processor = BDCStacProcessor( iface, task_notifier, task_processor, client )
+        client = BDCStacClient()
+        self._processor = BDCStacProcessor( iface, task_processor, client )
         self._config_collection = configCollection()
 
         self.catalog = None # initGui
@@ -85,8 +85,8 @@ class BDCCatalogPlugin(QObject):
         self.iface.webToolBar().addAction(self.bdc_action)
 
         # Catalog Widget
-        widget = CatalogWidget( self.iface, self._processor.isCancelled, self._config_collection, 'bdccatalogwidget' )
-        self.catalog = Catalog( self.iface, self._config_collection, widget, self._processor )
+        widget = CatalogWidget( self.iface, self._config_collection, 'bdccatalogwidget' )
+        self.catalog = Catalog( widget, self._processor )
         self.catalog.addWidget()
 
     def unload(self)->None:
