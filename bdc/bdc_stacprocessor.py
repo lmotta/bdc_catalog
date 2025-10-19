@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 /***************************************************************************
- BDC Catalog
-                                 A QGIS plugin
- Plugin to access Brasil Data Cube for show COG scenes
+ BDC Catalog Manager task processing
                              -------------------
         begin                : 2025-09-02
         copyright            : (C) 2025 by Luiz Motta

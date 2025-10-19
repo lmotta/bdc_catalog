@@ -2,8 +2,6 @@
 """
 /***************************************************************************
  BDC Catalog
-                                 A QGIS plugin
- Plugin to access Brasil Data Cube for show COG scenes
                              -------------------
         begin                : 2025-09-02
         copyright            : (C) 2025 by Luiz Motta
@@ -53,8 +51,35 @@ class BDCStacClient(StacClient):
     def __init__(self):
         super().__init__()
 
-        self.SEARCH_URL = 'https://data.inpe.br/bdc/stac/v1/search'
-        self.use_url_file = True
+        self.STAC_URL = 'https://data.inpe.br/bdc/stac/v1'
+
+    def _setCollectionsCOGBandsMeta(self)->dict:
+        args = {
+            'url': f"{self.STAC_URL}/collections/{self.collection['id']}"
+        }
+        r = self._getResponse( args )
+        if not r['is_ok']:
+            return r
+
+        result = r['response'].json()
+        assets = [ asset for asset, value in result['item_assets'].items() if 'profile=cloud-optimized' in value['type'] ]
+        bands = {
+            f"{item['name']},{item['common_name']}": {
+                self._feat_key_spatial_res: item['resolution_x']
+            } for item in result['properties']['eo:bands']
+        }
+        meta = {}
+        for asset in assets:
+            for key, value in bands.items():
+                if asset in key:
+                   sr = f"{int( value[ self._feat_key_spatial_res ] )}"
+                   sr = f"{sr}x{sr}"
+                   meta[ asset ] = { self._feat_key_spatial_res: sr }
+                   break
+
+        self._collections_cog_bands_meta[ self.collection['id'] ]  = meta
+        
+        return { 'is_ok': True }
 
     def search(
             self,
@@ -67,21 +92,7 @@ class BDCStacClient(StacClient):
         def processResponse(response)->dict:
             def getCRS(ds)->dict:
                 sr = ds.GetSpatialRef()
-                #return f"{sr.GetAuthorityName(None)}-{sr.GetAuthorityCode(None)}"
                 return sr.GetAuthorityCode(None)
-
-            def getSpatiaResolution(url:str)->dict:
-                r = openUrl( url )
-                if not r['is_ok']:
-                    return r
-
-                (_, res_x, _,_, _, res_y) = r['dataset'].GetGeoTransform()
-                r['dataset'] = None
-
-                return {
-                    'is_ok': True,
-                    'spatial_res': f"{res_x}x{-1*res_y}"
-                }
 
             def getFootprint(dataset_url):
                 band = dataset_url.GetRasterBand(1)
@@ -109,25 +120,25 @@ class BDCStacClient(StacClient):
                 return json.loads( json_geom )
                 
             def getIdItems(feature:dict)->tuple:
-                keys = ('datetime', 'created')
-                properties = { k: feature['properties'][ k ] for k in keys }
-                orbit = feature['id'].split('_')[ self.collection['orbit_id'] ]
-                if 'orbit_len' in self.collection:
-                    orbit = orbit[: self.collection['orbit_len'] ]
-                properties[ self._feat_key_orbit_crs ] = f"{orbit}_{feature[ self._feat_key_crs ]}"
-                
+                name = feature['id']
+                id = self.collection['orbit_id']
+                orbit = name[ id:][:self.collection['orbit_len'] ] if (
+                    'orbit_len' in self.collection
+                 ) else name.split('_')[ id ]
+
+                properties = {
+                    'datetime': feature['properties']['datetime'],
+                    'created': feature['properties'][ self.collection ['created'] ],
+                    self._feat_key_orbit_crs: f"{orbit}_{feature[ self._feat_key_crs ]}"
+                }                
                 assets_bands = {}
                 for asset, values in feature['assets'].items():
-                    if not 'profile=cloud-optimized' in values['type']:
+                    if not asset in self._collections_cog_bands_meta[ self.collection['id'] ]:
                         continue
-
-                    r = getSpatiaResolution( values['href'] )
-                    if not['is_ok']:
-                        return ( None, r['message'] )
 
                     assets_bands[ asset ] = {
                         'href': values['href'],
-                        self._feat_key_res_xy: r[ self._feat_key_res_xy ]
+                        self._feat_key_spatial_res: self._collections_cog_bands_meta[ self.collection['id'] ][ asset ][ self._feat_key_spatial_res ]
                     }
 
                 return feature['id'], ( { 'geometry': feature['geometry'] } | {'properties': properties } | {'bands': assets_bands} )
@@ -175,7 +186,7 @@ class BDCStacClient(StacClient):
                 if not self.collection['exists_geom']:
                     geom = getFootprint( dataset_url )
                     feat['geometry'] = geom
-
+                
                 dataset_url = None
 
                 if not intersects(bbox, geom ):
@@ -213,7 +224,7 @@ class BDCStacClient(StacClient):
                 'bbox': ','.join( str(f) for f in bbox ),
                 'datetime': f"{dates[0]}T00:00:00Z/{dates[1]}T00:00:00Z"
             }
-            r = self._getResponse( {'url': self.SEARCH_URL, 'timeout': 10, 'params': p} )
+            r = self._getResponse( {'url': f"{self.STAC_URL}/search", 'timeout': 10, 'params': p} )
             if not r['is_ok']:
                 return r
 
@@ -233,13 +244,21 @@ class BDCStacClient(StacClient):
             del r['features']
             return r
         
-        def messageTotalFeatures(matched:int)->None:
+        def messageTotalFeatures(total:int)->None:
             filtered = len(self._features)
-            msg = tr("STAC - Totals: {} received, {} - filtered").format( matched, filtered )
+            msg = tr("STAC - Totals: {} received, {} - filtered").format( total, filtered )
             requestProcessData.emit( {
                 'type': 'message_log',
                 'data': { 'text': msg, 'level': Qgis.Info }
             })
+
+        r = self._setCollectionsCOGBandsMeta()
+        if not r['is_ok']:
+            requestProcessData.emit( {
+                'type': 'message_bar',
+                'data':{ 'text': r['message'], 'level': Qgis.Critical }
+            })
+            return False
 
         self._request_count = 1
 
@@ -252,8 +271,9 @@ class BDCStacClient(StacClient):
             })
             return False
 
-        matched = r['matched']
-        if not matched:
+        #matched = r['matched']
+        returned = r['returned']
+        if not returned:
             msg = tr("No scenes found in '{}' collection").format( self.collection['id'] )
             requestProcessData.emit( {
                 'type': 'message_bar',
@@ -264,7 +284,7 @@ class BDCStacClient(StacClient):
         self._features = r['features']
 
         if r['url_next'] is None:
-            messageTotalFeatures( matched )
+            messageTotalFeatures( returned )
             return True
 
         total_returned = r['returned']
@@ -289,24 +309,11 @@ class BDCStacClient(StacClient):
                 return True
             
             if r['url_next'] is None:
-                messageTotalFeatures( matched )
+                messageTotalFeatures( returned )
                 return True
 
-            msg = tr("Footprint filtered: {} of {}").format( total_returned, matched )
+            msg = tr("Footprint filtered: {} of {}").format( total_returned, returned )
             requestProcessData.emit( {
                 'type': 'message_bar',
                 'data': { 'text': msg, 'level': Qgis.Info }
             })
-
-    def getScenesByDateOrbitsCRS(self, spatial_resolution:str)->dict:
-        scene_list = {}
-        for asset, data in self._features.items():
-            p = data['properties']
-            scene_key = f"{p['datetime'].split('T')[0]}_{p[ self._feat_key_orbit_crs ]}"
-            urls = { asset: { band: value['href'] for band, value in data['bands'].items() if value[ self._feat_key_res_xy ] == spatial_resolution } }
-            if not scene_key in scene_list:
-                scene_list[ scene_key ] = [ urls ]
-                continue
-            scene_list[ scene_key ].append( urls )
-        
-        return scene_list

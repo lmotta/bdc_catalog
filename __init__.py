@@ -78,7 +78,7 @@ class BDCCatalogPlugin(QObject):
         self.bdc_action = QAction( icon, self.action_name, self.iface.mainWindow() )
         self.bdc_action.setToolTip( self.action_name )
         self.bdc_action.setCheckable( True )
-        self.bdc_action.triggered.connect(self.on_BdcClicked)
+        self.bdc_action.triggered.connect(self.on_Clicked)
 
         self.menu_name = f"&{self.action_name}"
         self.iface.addPluginToWebMenu( self.menu_name, self.bdc_action )
@@ -94,7 +94,7 @@ class BDCCatalogPlugin(QObject):
         self.iface.webToolBar().removeAction( self.bdc_action )
         # Disconnect
         try:
-            self.bdc_action.triggered.disconnect( self.on_BdcClicked )
+            self.bdc_action.triggered.disconnect( self.on_Clicked )
         except Exception:
             pass
         self.bdc_action.deleteLater()
@@ -102,6 +102,6 @@ class BDCCatalogPlugin(QObject):
         self.catalog.addWidget()
 
     @pyqtSlot(bool)
-    def on_BdcClicked(self, enabled:bool)->None:
+    def on_Clicked(self, enabled:bool)->None:
         self.catalog.enabled( enabled )
 

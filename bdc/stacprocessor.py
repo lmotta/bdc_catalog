@@ -86,13 +86,11 @@ class StacProcessor(QObject):
 
         self.addMosaicScenes.connect( self._onAddMosaicScenes )
 
-    @abstractmethod
     def _search_run(self, task:QgsTask)->bool:
-        pass
+        return self._client.search( self.bbox, self.dates, self.requestProcessData, task.isCanceled )
 
-    def setCollection(self, collection:dict)->None:
+    def setCollection(self, collection:dict):
         self._client.collection = collection
-
         self._vrt_options = { 'separate': True, 'bandList': [1]  }
         if 'nodata' in self._client.collection:
             self._vrt_options['srcNodata'] = self._client.collection['nodata']
@@ -212,15 +210,15 @@ class StacProcessor(QObject):
         self._total_mosaic = None
 
         name = f"Create Footprint - {self._str_search}"
-        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
-        self.task_processor.setTask( task, self._client.collection['id'] )
-        self.taskManager.addTask( task )
-        self.task_id = self.taskManager.taskId(task)
+        # task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        # self.task_processor.setTask( task, self._client.collection['id'] )
+        # self.taskManager.addTask( task )
+        # self.task_id = self.taskManager.taskId(task)
 
         # DEBUGGER
-        # task = TaskDebugger()
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None,  run(task) )
+        task = TaskDebugger()
+        self.task_processor.setTask( task, self._client.collection['id'] )
+        on_finished(None,  run(task) )
         #
 
     def _onAddMosaicScenes(self)->None:
@@ -330,15 +328,15 @@ class StacProcessor(QObject):
                 })
                 
         name = f"Create Mosaics - {self._str_search}"
-        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
-        self.task_processor.setTask( task, self._client.collection['id'] )
-        self.taskManager.addTask( task )
-        self.task_id = self.taskManager.taskId( task )
+        # task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        # self.task_processor.setTask( task, self._client.collection['id'] )
+        # self.taskManager.addTask( task )
+        # self.task_id = self.taskManager.taskId( task )
         
         # DEBUGGER
-        # task = TaskDebugger()
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None, run(task))
+        task = TaskDebugger()
+        self.task_processor.setTask( task, self._client.collection['id'] )
+        on_finished(None, run(task))
         #
 
     def process(self)->None:

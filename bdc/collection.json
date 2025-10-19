@@ -1,77 +1,71 @@
 {
     "Sentinel 2": {
         "id": "S2_L2A-1",
-        "composites": {
-            "truecolor": ["B04", "B03", "B02"],
-            "falsecolor": ["B08", "B04", "B03"]
-        },
         "spatial_res_composite": {
-            "10.0x10.0": ["B04", "B03", "B02"],
-            "20.0x20.0": ["B05", "B06", "B07"],
-            "60.0x60.0": ["B01", "B09"]
+            "10x10": ["B04", "B03", "B02"],
+            "20x20": ["B05", "B06", "B07"],
+            "60x60": ["B01", "B09"]
         },
+        "spatial_res": "resolution_x",
+        "band_list": "eo:bands",
+        "created": "created",
         "orbit_id": 4,
         "exists_geom": true,
         "nodata": 0
     },
     "Landsat 2": {
         "id": "landsat-2",
-        "composites": {
-            "truecolor": ["red", "green", "blue"],
-            "falsecolor": ["nir08", "red", "green"]
-        },
         "spatial_res_composite": {
-            "30.0x30.0": ["red", "green", "blue"]
+            "30x30": ["red", "green", "blue"]
         },
+        "spatial_res": "resolution_x",
+        "created": "created",
+        "band_list": "eo:bands",
         "orbit_id": 2,
         "orbit_len": 3,
         "exists_geom": false
     },
     "Amazonia-1/WFI": {
         "id": "AMZ1-WFI-L4-SR-1",
-        "composites": {
-            "truecolor": ["BAND3", "BAND4", "BAND2"],
-            "falsecolor": ["BAND4", "BAND3", "BAND2"]
-        },
         "spatial_res_composite": {
-            "64.0x64.0": ["BAND3", "BAND4", "BAND2"]
+            "64x64": ["BAND3", "BAND4", "BAND2"]
         },
+        "spatial_res": "resolution_x",
+        "band_list": "eo:bands",
+        "created": "created",
         "orbit_id": 5,
         "exists_geom": false
     },
     "CBERS-4/MUX": {
         "id": "CB4-MUX-L4-SR-1",
-        "composites": {
-            "truecolor": ["BAND7", "BAND6", "BAND5"],
-            "falsecolor": ["BAND8", "BAND7", "BAND6"]
-        },
         "spatial_res_composite": {
-            "20.0x20.0": ["BAND7", "BAND6", "BAND5"]
+            "20x20": ["BAND7", "BAND6", "BAND5"]
         },
+        "spatial_res": "resolution_x",
+        "band_list": "eo:bands",
+        "created": "created",
         "orbit_id": 4,
         "exists_geom": false
     },
     "CBERS-4/WFI": {
         "id": "CB4-WFI-L4-SR-1",
-        "composites": {
-            "truecolor": ["BAND15", "BAND14", "BAND13"],
-            "falsecolor": ["BAND16", "BAND15", "BAND14"]
-        },
         "spatial_res_composite": {
-            "64.0x64.0": ["BAND15", "BAND14", "BAND13"]
+            "64x64": ["BAND15", "BAND14", "BAND13"]
         },
+        "spatial_res": "resolution_x",
+        "created": "created",
+        "band_list": "eo:bands",
         "orbit_id": 4,
         "exists_geom": false
     },
     "CBER-4A/WFI": {
         "id": "CB4A-WFI-L4-SR-1",
-        "composites": {
-            "truecolor": ["BAND15", "BAND14", "BAND13"],
-            "falsecolor": ["BAND16", "BAND15", "BAND14"]
-        },
         "spatial_res_composite": {
-            "55.0x55.0": ["BAND15", "BAND14", "BAND13"]
+            "55x55": ["BAND15", "BAND14", "BAND13"]
         },
+        "spatial_res": "resolution_x",
+        "created": "created",
+        "band_list": "eo:bands",
         "orbit_id": 4,
         "exists_geom": false
     }
