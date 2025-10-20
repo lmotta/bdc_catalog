@@ -15,14 +15,11 @@
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
- """
-
-
-import os
+"""
 
 from .stacprocessor import (
-    StacProcessor,
     QgisInterface, QgsTask,
+    StacProcessor,
     TaskProcessor,
     StacClient
 )

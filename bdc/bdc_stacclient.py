@@ -52,6 +52,7 @@ class BDCStacClient(StacClient):
         super().__init__()
 
         self.STAC_URL = 'https://data.inpe.br/bdc/stac/v1'
+        self._verify_ssl = False
 
     def _setCollectionsCOGBandsMeta(self)->dict:
         args = {
@@ -119,29 +120,8 @@ class BDCStacClient(StacClient):
 
                 return json.loads( json_geom )
                 
-            def getIdItems(feature:dict)->tuple:
-                name = feature['id']
-                id = self.collection['orbit_id']
-                orbit = name[ id:][:self.collection['orbit_len'] ] if (
-                    'orbit_len' in self.collection
-                 ) else name.split('_')[ id ]
-
-                properties = {
-                    'datetime': feature['properties']['datetime'],
-                    'created': feature['properties'][ self.collection ['created'] ],
-                    self._feat_key_orbit_crs: f"{orbit}_{feature[ self._feat_key_crs ]}"
-                }                
-                assets_bands = {}
-                for asset, values in feature['assets'].items():
-                    if not asset in self._collections_cog_bands_meta[ self.collection['id'] ]:
-                        continue
-
-                    assets_bands[ asset ] = {
-                        'href': values['href'],
-                        self._feat_key_spatial_res: self._collections_cog_bands_meta[ self.collection['id'] ][ asset ][ self._feat_key_spatial_res ]
-                    }
-
-                return feature['id'], ( { 'geometry': feature['geometry'] } | {'properties': properties } | {'bands': assets_bands} )
+            getNameFromFeature = lambda feature: feature['id']
+            getCRSFromFeature = lambda feature: str( feature[ self._feat_key_crs ] )
 
             if not response.status_code == 200:
                 response.close()
@@ -194,7 +174,7 @@ class BDCStacClient(StacClient):
 
                 returned_check += 1
 
-                id, values = getIdItems( feat )
+                id, values = self._getIdItems( feat, getNameFromFeature, getCRSFromFeature )
                 if id is None:
                     return {
                         'is_ok': False,

@@ -28,6 +28,7 @@ from .translate import tr
 
 from abc import abstractmethod
 
+from qgis.core import Qgis
 from qgis.PyQt.QtCore import QObject, pyqtSignal
 
 
@@ -57,6 +58,8 @@ class StacClient(QObject):
         self._srs4326 = sr4326()
 
     def _getResponse(self, args:dict)->dict:
+        if self._verify_ssl == False:
+            args['verify'] = False
         msg_error = None
         try:
             response = self._session.get( **args)
@@ -114,6 +117,146 @@ class StacClient(QObject):
         self._collections_cog_bands_meta[ self.collection['id'] ]  = meta
         
         return { 'is_ok': True }
+
+    def _getIdItems(
+            self, feature:dict,
+            getNameFromFeature:Callable[[dict], str],
+            getCRSFromFeature:Callable[[dict], str]
+        )->tuple:
+        name = getNameFromFeature( feature )
+        id = self.collection['orbit_id']
+        orbit = name[ id:][:self.collection['orbit_len'] ] if (
+            'orbit_len' in self.collection
+            ) else name.split('_')[ id ]
+
+        properties = {
+            'datetime': feature['properties']['datetime'],
+            'created': feature['properties'][ self.collection ['created'] ],
+            self._feat_key_orbit_crs: f"{orbit}_{getCRSFromFeature(feature)}"
+        }                
+        assets_bands = {}
+        for asset, values in feature['assets'].items():
+            if not asset in self._collections_cog_bands_meta[ self.collection['id'] ]:
+                continue
+
+            assets_bands[ asset ] = {
+                'href': values['href'],
+                self._feat_key_spatial_res: self._collections_cog_bands_meta[ self.collection['id'] ][ asset ][ self._feat_key_spatial_res ]
+            }
+
+        return feature['id'], ( { 'geometry': feature['geometry'] } | {'properties': properties } | {'bands': assets_bands} )
+
+    def _processResponse(
+            self,
+            response:requests.Response,
+            requestProcessData:pyqtSignal,
+            isCanceled:Callable[[], bool],
+            getNameFromFeature:Callable[[dict], str],
+            getCRSFromFeature:Callable[[dict], str],
+            getNextUrlFromResult:Callable[[dict], str]
+        )->dict:
+        if not response.status_code == 200:
+            response.close()
+            return {
+                'is_ok': False,
+                'message': response.text
+            }
+
+        result = response.json()
+        response.close()
+
+        if not len( result['features'] ):
+            return {
+                'is_ok': True,
+                'returned': 0
+            }
+        
+        url_next = getNextUrlFromResult( result )
+
+        features = {}
+        count = 0
+        total = len( result['features'] )
+        for feat in result['features']:
+            count += 1
+
+            msg = tr("Request ({}) processing {} of {}").format( self._request_count, count, total )
+            requestProcessData.emit({
+                'type': 'footprint_status',
+                'data': { 'label': msg, 'count': count, 'total': total }
+            })
+
+            id, values = self._getIdItems( feat, getNameFromFeature, getCRSFromFeature )
+            features[ id ] = values
+
+            if isCanceled():
+                return {
+                    'is_ok': False,
+                    'message': tr('Process cancelled by user')
+                }
+
+        return {
+            'is_ok': True,
+            'returned': total,
+            'features': features,
+            'url_next': url_next
+        }
+
+    def _searchStacItems(
+            self,
+            bbox:list,
+            dates:list,
+            requestProcessData:pyqtSignal,
+            isCanceled:Callable[[], bool],
+            getNameFromFeature:Callable[[dict], str],
+            getCRSFromFeature:Callable[[dict], str],
+            getNextUrlFromResult:Callable[[dict], str]
+        )->dict:
+        p = {
+            'collections': [ self.collection['id'] ],
+            'limit': self.LIMIT,
+            'bbox': ','.join( str(f) for f in bbox ),
+            'datetime': f"{dates[0]}T00:00:00Z/{dates[1]}T00:00:00Z"
+        }
+        r = self._getResponse( {'url': f"{self.STAC_URL}/search", 'timeout': 10, 'params': p } )
+        if not r['is_ok']:
+            return r
+
+        return self._processResponse(
+            r['response'], requestProcessData, isCanceled,
+            getNameFromFeature, getCRSFromFeature, getNextUrlFromResult
+        )
+
+    def _fetchNextPage(
+            self,
+            url:str,
+            requestProcessData:pyqtSignal,
+            isCanceled:Callable[[], bool],
+            getNameFromFeature:Callable[[dict], str],
+            getCRSFromFeature:Callable[[dict], str],
+            getNextUrlFromResult:Callable[[dict], str]
+        )->dict:
+        r = self._getResponse( {'url':url, 'timeout': 10 } )
+        if not r['is_ok']:
+            return r
+
+        r = self._processResponse(
+            r['response'], requestProcessData, isCanceled,
+            getNameFromFeature, getCRSFromFeature, getNextUrlFromResult
+        )
+        if not r['is_ok'] or r['returned'] == 0:
+            return r
+        
+        self._features |= r['features']
+
+        del r['features']
+        return r
+
+    def _messageTotalFeatures(self, total:int, requestProcessData:pyqtSignal)->None:
+        msg = tr("STAC - Totals: {} received").format( total)
+        requestProcessData.emit( {
+            'type': 'message_log',
+            'data': { 'text': msg, 'level': Qgis.Info }
+        })
 
     def getFeatures(self)->List[dict]:
         return self._features
