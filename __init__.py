@@ -62,7 +62,7 @@ class BDCCatalogPlugin(QObject):
 
         self.plugin_name = 'BDCCatalog'
         self.action_name = 'BDC Catalog'
-        self.bdc_action = None
+        self.action = None
 
         # Catalog Widget
         task_processor = TaskProcessor( self.iface, 'BDC Catalog' )
@@ -75,14 +75,14 @@ class BDCCatalogPlugin(QObject):
     def initGui(self)->None:
         path = QDir( os.path.dirname(__file__) )
         icon = QIcon( path.filePath('resources/bdccatalog.svg'))
-        self.bdc_action = QAction( icon, self.action_name, self.iface.mainWindow() )
-        self.bdc_action.setToolTip( self.action_name )
-        self.bdc_action.setCheckable( True )
-        self.bdc_action.triggered.connect(self.on_Clicked)
+        self.action = QAction( icon, self.action_name, self.iface.mainWindow() )
+        self.action.setToolTip( self.action_name )
+        self.action.setCheckable( True )
+        self.action.triggered.connect(self.on_Clicked)
 
         self.menu_name = f"&{self.action_name}"
-        self.iface.addPluginToWebMenu( self.menu_name, self.bdc_action )
-        self.iface.webToolBar().addAction(self.bdc_action)
+        self.iface.addPluginToWebMenu( self.menu_name, self.action )
+        self.iface.webToolBar().addAction(self.action)
 
         # Catalog Widget
         widget = CatalogWidget( self.iface, self._config_collection, 'bdccatalogwidget' )
@@ -90,16 +90,17 @@ class BDCCatalogPlugin(QObject):
         self.catalog.addWidget()
 
     def unload(self)->None:
-        self.iface.removePluginMenu( self.menu_name, self.bdc_action )
-        self.iface.webToolBar().removeAction( self.bdc_action )
+        self.iface.removePluginWebMenu( self.menu_name, self.action )
+        self.iface.webToolBar().removeAction( self.action )
+        self.iface.unregisterMainWindowAction( self.action )
         # Disconnect
         try:
-            self.bdc_action.triggered.disconnect( self.on_Clicked )
+            self.action.triggered.disconnect( self.on_Clicked )
         except Exception:
             pass
-        self.bdc_action.deleteLater()
+        self.action.deleteLater()
 
-        self.catalog.addWidget()
+        del self.catalog
 
     @pyqtSlot(bool)
     def on_Clicked(self, enabled:bool)->None:

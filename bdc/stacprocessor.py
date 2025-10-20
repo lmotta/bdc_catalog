@@ -210,15 +210,15 @@ class StacProcessor(QObject):
         self._total_mosaic = None
 
         name = f"Create Footprint - {self._str_search}"
-        # task = QgsTask.fromFunction( name, run, on_finished=on_finished )
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # self.taskManager.addTask( task )
-        # self.task_id = self.taskManager.taskId(task)
+        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        self.task_processor.setTask( task, self._client.collection['id'] )
+        self.taskManager.addTask( task )
+        self.task_id = self.taskManager.taskId(task)
 
         # DEBUGGER
-        task = TaskDebugger()
-        self.task_processor.setTask( task, self._client.collection['id'] )
-        on_finished(None,  run(task) )
+        # task = TaskDebugger()
+        # self.task_processor.setTask( task, self._client.collection['id'] )
+        # on_finished(None,  run(task) )
         #
 
     def _onAddMosaicScenes(self)->None:
@@ -328,15 +328,15 @@ class StacProcessor(QObject):
                 })
                 
         name = f"Create Mosaics - {self._str_search}"
-        # task = QgsTask.fromFunction( name, run, on_finished=on_finished )
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # self.taskManager.addTask( task )
-        # self.task_id = self.taskManager.taskId( task )
+        task = QgsTask.fromFunction( name, run, on_finished=on_finished )
+        self.task_processor.setTask( task, self._client.collection['id'] )
+        self.taskManager.addTask( task )
+        self.task_id = self.taskManager.taskId( task )
         
         # DEBUGGER
-        task = TaskDebugger()
-        self.task_processor.setTask( task, self._client.collection['id'] )
-        on_finished(None, run(task))
+        # task = TaskDebugger()
+        # self.task_processor.setTask( task, self._client.collection['id'] )
+        # on_finished(None, run(task))
         #
 
     def process(self)->None:
