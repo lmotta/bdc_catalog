@@ -51,6 +51,7 @@ class BDCStacClient(StacClient):
     def __init__(self):
         super().__init__()
 
+        self.TAG_ATT = 'BDC'
         self.STAC_URL = 'https://data.inpe.br/bdc/stac/v1'
         self._verify_ssl = False
 

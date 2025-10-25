@@ -18,6 +18,7 @@
  """
 
 import json
+import xml.etree.ElementTree as ET
 import os
 from typing import List
 
@@ -83,6 +84,11 @@ class StacProcessor(QObject):
         self.taskManager = QgsApplication.taskManager()
         self.task_id = None
         self.is_task_canceled = False
+
+        self._tag_att_values_source = {
+            'vrt': 'VRT',
+            'url': 'URL'
+        }
 
         self.addMosaicScenes.connect( self._onAddMosaicScenes )
 
@@ -245,6 +251,13 @@ class StacProcessor(QObject):
 
         def run(task:QgsTask)->None:
             def createRasterMosaicVRT(scene_list:List[dict], date_orbit_crs:str)->dict:
+                def writeVRTSource(filepath, source_type):
+                    tree = ET.parse( filepath )
+                    root = tree.getroot()
+                    root.set( self._client.TAG_ATT, source_type )
+                    root.set( 'collection_id', self._client.collection['id'] )
+                    tree.write( filepath, encoding='UTF-8', xml_declaration=True)
+
                 def addBandNames(dataset:QgsRasterLayer, band_names:List[str])->None:
                     for i, name in enumerate( band_names ):
                         band = dataset.GetRasterBand( i + 1 )
@@ -274,6 +287,7 @@ class StacProcessor(QObject):
                         ds_ = gdal.BuildVRT (vrt_path, vsicurl_band_urls, options=self._vrt_options )
                         addBandNames( ds_, band_names )
                         ds_ = None
+                        writeVRTSource( vrt_path, self._tag_att_values_source['url'])
 
                         vrt_paths.append( vrt_path )
 
@@ -284,6 +298,7 @@ class StacProcessor(QObject):
                 ds_ = gdal.BuildVRT(filepath, vrt_paths)
                 addBandNames( ds_, band_names )
                 ds_ = None
+                writeVRTSource( filepath, self._tag_att_values_source['vrt'])
 
                 return {
                     'is_ok': True,
@@ -378,6 +393,7 @@ class StacProcessor(QObject):
             return
 
         self._search() # Call _addMosaicScenes
+
 
     @pyqtSlot()
     def cancelCurrentTask(self)->None:
