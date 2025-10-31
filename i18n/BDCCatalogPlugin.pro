@@ -1,11 +1,11 @@
 SOURCES += \
-../bdc/bdc_stac_processor.py \
-../bdc/bdc_stac.py \
-../bdc/bdc_taskmanager.py \
-../bdc/bdc_widget.py \
+../__init__.py \
+../bdc/catalogwidget.py \
 ../bdc/config.py \
+../bdc/stacclient.py \
+../bdc/stacprocessor.py \
+../bdc/taskmanager.py \
+../bdc/bdc_stacclient.py
 
 TRANSLATIONS += \
-./pt.ts \
-./es.ts
-
+./pt.ts

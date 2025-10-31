@@ -18,11 +18,8 @@
  """
 
 import json
-import xml.etree.ElementTree as ET
 import os
 from typing import List
-
-from abc import abstractmethod
 
 from osgeo import gdal
 gdal.UseExceptions()
@@ -43,11 +40,12 @@ from qgis.core import (
 )
 from qgis.gui import QgisInterface
 
-from .taskmanager import TaskProcessor, TaskDebugger
+from .taskmanager import TaskProcessor
 from .stacclient import StacClient
 
 from .translate import tr
 
+# from .debugtask import DebugTask # DEBUG
 
 class StacProcessor(QObject):
     finished = pyqtSignal()
@@ -65,7 +63,12 @@ class StacProcessor(QObject):
 
         self._footprint_style = os.path.join( os.path.dirname(os.path.abspath(__file__)), 'footprint.qml')
         
-        self._vrt_options = None
+        self._vrt_options = {
+            'separate': True,
+            'bandList': [1],
+            'callback': self._callbackVRTBuild,
+            'callback_data': None # QgsTask object will be set during VRT build
+        }
         self.spatial_resolution = None
         self.dates = None
         self.dir_mosaic = None
@@ -97,10 +100,17 @@ class StacProcessor(QObject):
 
     def setCollection(self, collection:dict):
         self._client.collection = collection
-        self._vrt_options = { 'separate': True, 'bandList': [1]  }
+        if 'srcNodata' in self._vrt_options:
+            del self._vrt_options['srcNodata']
         if 'nodata' in self._client.collection:
             self._vrt_options['srcNodata'] = self._client.collection['nodata']
-        self._vrt_options = gdal.BuildVRTOptions( **self._vrt_options )
+
+    def _callbackVRTBuild(self, complete:float, message:str, user_data:QgsTask)->None:
+        if user_data.isCanceled():
+            return 0
+
+        user_data.setProgress( complete*100 )
+        return 1
 
     def _search(self)->None:
         def createFootprintLayerFile(filepath:str, driver:str, features:dict)->None:
@@ -190,6 +200,8 @@ class StacProcessor(QObject):
             self.addMosaicScenes.emit()
 
         def run(task:QgsTask)->dict:
+            # self.debug.active() # DEBUG
+
             if not self._search_run( task ):
                 if task.isCanceled():
                     self.is_task_canceled = True
@@ -221,14 +233,10 @@ class StacProcessor(QObject):
         self.taskManager.addTask( task )
         self.task_id = self.taskManager.taskId(task)
 
-        # DEBUGGER
-        # task = TaskDebugger()
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None,  run(task) )
-        #
+        # self.debug = DebugTask() # DEBUG
 
     def _onAddMosaicScenes(self)->None:
-        def on_finished(exception, data=None)->None:
+        def on_finished(exception, data:dict)->None:
             if exception:
                 self.requestProcessData.emit({
                     'type': 'message_bar',
@@ -237,7 +245,7 @@ class StacProcessor(QObject):
                 self.finished.emit()
                 return
 
-            if self.is_task_canceled:
+            if not data['is_ok']:
                 self.finished.emit()
                 return
 
@@ -252,16 +260,20 @@ class StacProcessor(QObject):
         def run(task:QgsTask)->None:
             def createRasterMosaicVRT(scene_list:List[dict], date_orbit_crs:str)->dict:
                 def writeVRTSource(filepath, source_type):
-                    tree = ET.parse( filepath )
-                    root = tree.getroot()
-                    root.set( self._client.TAG_ATT, source_type )
-                    root.set( 'collection_id', self._client.collection['id'] )
-                    tree.write( filepath, encoding='UTF-8', xml_declaration=True)
+                    data = {
+                        'collection_id': self._client.collection['id'],
+                        'source_type': source_type
+                    }
+                    with open( f"{filepath}.{self._client.TAG_ATT}.json", "w", encoding="utf-8") as f:
+                        json.dump( data, f, indent=4 )
 
                 def addBandNames(dataset:QgsRasterLayer, band_names:List[str])->None:
                     for i, name in enumerate( band_names ):
                         band = dataset.GetRasterBand( i + 1 )
                         band.SetDescription( name )
+
+                self._vrt_options['callback_data'] = task
+                options = gdal.BuildVRTOptions( **self._vrt_options )
 
                 name_mosaic = f"{self._client.collection['id']}.{date_orbit_crs}_{self.spatial_resolution}"
                 dir_mosaic_scenes = os.path.join( self.dir_mosaic, self._str_search )
@@ -284,18 +296,44 @@ class StacProcessor(QObject):
                         vsicurl_band_urls = url_rgb + vsicurl_band_urls
                         band_names = self._client.collection['spatial_res_composite'][ self.spatial_resolution ] + band_names
 
-                        ds_ = gdal.BuildVRT (vrt_path, vsicurl_band_urls, options=self._vrt_options )
+                        ds_ = gdal.BuildVRT (vrt_path, vsicurl_band_urls, options=options )
+                        if ds_ is None:
+                            return {
+                                'is_ok': False,
+                                'message': tr('Error building VRT for scene {}').format( scene_id ),
+                                'level': Qgis.Critical
+
+                            }
+                        if task.isCanceled():
+                            ds_ = None
+                            return {
+                                'is_ok': False,
+                                'message': tr('Process cancelled by user'),
+                                'level': Qgis.Critical
+                            }
+
                         addBandNames( ds_, band_names )
                         ds_ = None
                         writeVRTSource( vrt_path, self._tag_att_values_source['url'])
 
                         vrt_paths.append( vrt_path )
 
-                        if task.isCanceled():
-                            return { 'is_ok': False, 'message': tr('Process cancelled by user') }
-
                 filepath = os.path.join( dir_mosaic_scenes, f"{name_mosaic}.vrt")
                 ds_ = gdal.BuildVRT(filepath, vrt_paths)
+                if ds_ is None:
+                    return {
+                        'is_ok': False,
+                        'message': tr('Error building mosaic VRT for date/orbit/crs {}').format( date_orbit_crs ),
+                        'level': Qgis.Critical
+                    }
+                if task.isCanceled():
+                    ds_ = None
+                    return {
+                        'is_ok': False,
+                        'message': tr('Process cancelled by user'),
+                        'level': Qgis.Critical
+                    }
+
                 addBandNames( ds_, band_names )
                 ds_ = None
                 writeVRTSource( filepath, self._tag_att_values_source['vrt'])
@@ -304,8 +342,9 @@ class StacProcessor(QObject):
                     'is_ok': True,
                     'filepath': filepath,
                     'layers': [ vrt.split( os.path.sep)[-1] for vrt in vrt_paths ]
-                    # 'band_names': band_names
                 }
+
+            # self.debug.active() # DEBUG
 
             scene_list = self._client.getScenesByDateOrbitsCRS( self.spatial_resolution )
             mosaic_count = 0
@@ -316,31 +355,39 @@ class StacProcessor(QObject):
                 'data': { 'text': msg, 'level': Qgis.Info }
             })
             for date_orbit_crs, data in scene_list.items():
+                mosaic_count += 1
+                args = (
+                    self._client.collection['id'],
+                    mosaic_count, self._mosaic_total,
+                    f"{self._client.collection['id']}.{date_orbit_crs}_{self.spatial_resolution}",
+                    len(data)
+                )
+                text = tr("{} - Mosaic {} of {}: {} ({})").format( *args )
+                self.requestProcessData.emit({
+                    'type': 'message_status',
+                    'data': text
+                })
+
                 r = createRasterMosaicVRT( data, date_orbit_crs )
                 if not r['is_ok']:
-                    level = Qgis.Warning
                     if task.isCanceled():
                         self.is_task_canceled = True
-                        level = Qgis.Critical
                     self.requestProcessData.emit({
                         'type': 'message_bar',
-                        'data': { 'text': r['message'], 'level': level  }
+                        'data': { 'text': r['message'], 'level': r['level']  }
                     })
-                    return
+                    return { 'is_ok': False }
                 
-                mosaic_count += 1
                 args = {
                     'filepath': r['filepath'],
-                    'layers': r['layers'],
-                    'total_raster': len(data),
-                    'mosaic_count': mosaic_count,
-                    'mosaic_total': self._mosaic_total
-                    # 'rgb_index': [ r['band_names'].index( b )+1 for b in self._client.collection['spatial_res_composite'][ self.spatial_resolution ] ]
+                    'layers': r['layers']
                 }
                 self.requestProcessData.emit({
                     'type': 'add_layer_mosaic_group',
                     'data': args
                 })
+
+            return { 'is_ok': True }
                 
         name = f"Create Mosaics - {self._str_search}"
         task = QgsTask.fromFunction( name, run, on_finished=on_finished )
@@ -348,12 +395,6 @@ class StacProcessor(QObject):
         self.taskManager.addTask( task )
         self.task_id = self.taskManager.taskId( task )
         
-        # DEBUGGER
-        # task = TaskDebugger()
-        # self.task_processor.setTask( task, self._client.collection['id'] )
-        # on_finished(None, run(task))
-        #
-
     def process(self)->None:
         def checkDataProcessed()->dict:
             p = {
@@ -383,7 +424,6 @@ class StacProcessor(QObject):
                 'data': { 'text': msg, 'level': Qgis.Warning }
             })
 
-
             self.finished.emit()
             return
 
@@ -392,7 +432,7 @@ class StacProcessor(QObject):
             self._onAddMosaicScenes()
             return
 
-        self._search() # Call _addMosaicScenes
+        self._search() # Call _onAddMosaicScenes after search finished
 
 
     @pyqtSlot()
