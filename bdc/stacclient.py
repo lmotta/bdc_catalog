@@ -179,14 +179,10 @@ class StacClient(QObject):
         for feat in result['features']:
             count += 1
 
-            text = tr("Request ({}) processing {} of {}").format( self._request_count, count, total )
+            msg = tr("Request ({}) processing {} of {}").format( self._request_count, count, total )
             requestProcessData.emit({
-                'type': 'message_status',
-                'data': text
-            })
-            requestProcessData.emit({
-                'type': 'progress_footprint',
-                'data': { 'count': count, 'total': total }
+                'type': 'footprint_status',
+                'data': { 'label': msg, 'count': count, 'total': total }
             })
 
             id, values = self._getIdItems( feat, getNameFromFeature, getCRSFromFeature )

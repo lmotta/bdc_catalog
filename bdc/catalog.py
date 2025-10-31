@@ -20,7 +20,6 @@
  """
 
 from typing import Any
-import os
 from qgis.PyQt.QtCore import QObject, pyqtSlot
 
 from .catalogwidget import CatalogWidget
@@ -60,7 +59,7 @@ class Catalog(QObject):
         self.processor.setCollection( self.config_collection[ values['collection'] ])
         self.processor.spatial_resolution = values['spatial_resolution']
         self.processor.dates = [ values['ini_date'], values['end_date'] ]
-        self.processor.dir_mosaic = os.path.normpath( values['vrt_dir'] )
+        self.processor.dir_mosaic = values['vrt_dir']
         self.processor.bbox = values['bbox']
 
         self.processor.process()

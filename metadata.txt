@@ -37,8 +37,6 @@ tracker:https://github.com/lmotta/bdc_catalog/issues
 repository:https://github.com/lmotta/bdc_catalog
 
 changelog:
-    - 2025-10-31
-    Refactoring
     - 2025-10-29
     Fixed unloading plugin
     - 0.1 (2025-10-10)
