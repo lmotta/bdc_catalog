@@ -31,24 +31,12 @@ from qgis.core import (
     QgsLayerTreeGroup,
     QgsLayerTreeLayer,
     QgsVectorLayer, QgsRasterLayer,
-    QgsMessageLog, Qgis,
+    QgsMessageLog,
     QgsTask
 )
 from qgis.gui import QgisInterface
 
 from .translate import tr
-
-class TaskDebugger():
-    def __init__(self):
-        self.isCanceled = lambda : False
-        self.isActive = lambda : True
-
-    def setProgress(self, progress):
-        #print(f"{progress} %")
-        pass
-
-    def cancel(self):
-        pass
 
 
 class TaskProcessor(QObject):
@@ -81,8 +69,9 @@ class TaskProcessor(QObject):
         methods = {
             'message_log': self.messageLog,
             'message_bar': self.messageBar,
+            'message_status': self.messageStatusText,
             'create_mosaic_group': self.createMosaicGroup,
-            'footprint_status': self.footprintStatus,
+            'progress_footprint': self.progressFootprint,
             'add_layer_vector': self.addVectorLayer,
             'add_layer_mosaic_group': self.addLayerMosaicGroup
         }
@@ -95,15 +84,16 @@ class TaskProcessor(QObject):
         self.message_bar.popWidget()
         self.message_bar.pushMessage( title=self.propertyName, text=message['text'], level=message['level'], duration=5 )
 
+    def messageStatusText(self, text:str)->None:
+        self.messageStatus.emit( text )
+
     def createMosaicGroup(self, name:str)->None:
         root = self.project.layerTreeRoot()
         self._mosaic_group = QgsLayerTreeGroup( name )
         root.insertChildNode(0, self._mosaic_group)
 
-    def footprintStatus(self, status:dict)->None:
+    def progressFootprint(self, status:dict)->None:
         self._task.setProgress( int( (status['count'] / status['total']) * 100 ) )
-        msg = f"{self.collection} - {status['label']}"
-        self.messageStatus.emit( msg )
 
     def addVectorLayer(self, source:dict)->None:
         def addStyle(layer):
@@ -130,10 +120,6 @@ class TaskProcessor(QObject):
 
     def addLayerMosaicGroup(self, status:dict)->None:
         name = os.path.splitext(os.path.basename(status['filepath']))[0]
-        msg = tr("{} - Mosaic {} of {}: {} ({})").format( self.collection, status['mosaic_count'], status['mosaic_total'], name, status['total_raster'] )
-        self.messageStatus.emit( msg )
-        self._task.setProgress( int( (status['mosaic_count'] / status['mosaic_total']) * 100 ) )
-        
         layer = QgsRasterLayer( status['filepath'], name )
         layer.setCustomProperty( self.propertyName, json.dumps({ 'layers': status['layers'] }) )
         self._addLayerToMosaicGroup( layer )

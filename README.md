@@ -30,6 +30,8 @@ This plugin is part of the Brazilian Fire Information System (Sisfogo), develop 
 Luiz Motta
 
 ## Changelog
+- 2025-10-31
+ Refactoring
 - 2025-10-29
  Fixed unloading plugin
 - 2025-10-10  
