@@ -18,6 +18,8 @@ cp -r ./resources "./$plugin_dir"
 # Create Translate files
 mkdir "./$plugin_dir/i18n"
 cp ./i18n/*.qm "./$plugin_dir/i18n"
+# Clean
+find "./$plugin_dir" -name ".directory" -type f -delete
 # Create Zip and remove Plugin Directory
 zip -q -r "$plugin_dir.zip" "./$plugin_dir"
 rm -r "./$plugin_dir"
